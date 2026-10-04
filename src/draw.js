@@ -51,6 +51,13 @@ export function draw(ctx, state, wholeTerritory, map) {
     ctx.strokeStyle = '#9be28c';
     ctx.stroke();
     ctx.setLineDash([]);
+
+    // The danger ring: inside it the wind damages the car.
+    ctx.beginPath();
+    ctx.arc(storm.funnel.x, storm.funnel.y, tuning.danger.ringMiles, 0, Math.PI * 2);
+    ctx.lineWidth = 4 / pixelsPerMile;
+    ctx.strokeStyle = '#ff4d4d';
+    ctx.stroke();
   }
 
   // The car. It keeps its size on screen in both views.

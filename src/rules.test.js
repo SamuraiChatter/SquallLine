@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { headHome, newGame, payPerSecond, step, toggleFilming, tornadoInFrame } from './rules.js';
+import { headHome, newGame, payPerSecond, step, toggleFilming, tornadoInFrame, windDamagePerSecond } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
@@ -10,6 +10,7 @@ const tuning = {
   storm: { path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], milesPerSecond: 1, hookLead: 0.1, tornadoes: [] },
   camera: { viewfinderDegrees: 20, panDegreesPerSecond: 30 },
   footage: { ringMiles: 10, payAtEdge: 10, payAtTornado: 110 },
+  danger: { ringMiles: 4, windDamageAtTornado: 0.8, flipMiles: 0.5, fullRepairCost: 400 },
 };
 
 test('a new game starts with the car in the middle of the territory', () => {
@@ -229,12 +230,75 @@ test('the day ends when the last tornado dies, and the earnings join the balance
 });
 
 test('heading home ends the day early with the same sums', () => {
-  const state = headHome({ ...parkedSouthOfTornado(), money: 50 });
+  const state = headHome({ ...parkedSouthOfTornado(), money: 50 }, filmTuning);
   assert.equal(state.dayOver, true);
   assert.equal(state.balance, 50);
 });
 
 test('once the day is over nothing moves', () => {
-  const done = headHome(parkedSouthOfTornado());
+  const done = headHome(parkedSouthOfTornado(), filmTuning);
   assert.deepEqual(step(done, { x: 1, y: 1 }, 5, filmTuning), done);
+});
+
+// Damage. The danger ring is 4 miles out. Wind damage climbs steeply from
+// nothing at its edge to 0.8 of the meter a second right at the tornado.
+// Within half a mile the car flips. A full meter costs 400 to repair.
+
+test('there is no wind damage outside the danger ring', () => {
+  assert.equal(windDamagePerSecond(4.5, filmTuning), 0);
+});
+
+test('wind damage climbs steeply toward the tornado', () => {
+  assert.equal(windDamagePerSecond(4, filmTuning), 0);
+  assert.equal(windDamagePerSecond(2, filmTuning), 0.2);
+  assert.equal(windDamagePerSecond(0, filmTuning), 0.8);
+});
+
+test('outside the danger ring the damage meter does not move', () => {
+  assert.equal(step(parkedSouthOfTornado(5), still, 0.25, filmTuning).damage, 0);
+});
+
+test('inside the danger ring the meter fills faster the closer the car is', () => {
+  const near = step(parkedSouthOfTornado(1), still, 0.25, filmTuning).damage;
+  const far = step(parkedSouthOfTornado(3), still, 0.25, filmTuning).damage;
+  assert.ok(near > far && far > 0);
+});
+
+test('damage applies while filming too', () => {
+  const filming = toggleFilming(parkedSouthOfTornado(1));
+  assert.ok(step(filming, still, 0.25, filmTuning).damage > 0);
+});
+
+test('with no tornado on the ground there is no damage', () => {
+  const calm = newGame(filmTuning);
+  const atFunnel = { ...calm, car: { ...calm.storm.funnel } };
+  assert.equal(step(atFunnel, still, 0.25, filmTuning).damage, 0);
+});
+
+test('driving into the tornado flips the car and ends the day', () => {
+  const state = step(parkedSouthOfTornado(0), still, 0.25, filmTuning);
+  assert.equal(state.wrecked, true);
+  assert.equal(state.dayOver, true);
+});
+
+test('a full damage meter wrecks the car and ends the day', () => {
+  const state = step({ ...parkedSouthOfTornado(1), damage: 0.99 }, still, 0.25, filmTuning);
+  assert.equal(state.wrecked, true);
+  assert.equal(state.dayOver, true);
+});
+
+test('the repair bill is in proportion to the damage', () => {
+  const state = headHome({ ...parkedSouthOfTornado(), money: 500, damage: 0.5 }, filmTuning);
+  assert.equal(state.repairBill, 200);
+  assert.equal(state.balance, 300);
+});
+
+test('a wreck still sells its footage, and the balance never goes below zero', () => {
+  const state = step({ ...parkedSouthOfTornado(0), money: 300 }, still, 0.25, filmTuning);
+  assert.equal(state.repairBill, 400);
+  assert.equal(state.balance, 0);
+});
+
+test('a day with no damage has no repair bill', () => {
+  assert.equal(headHome({ ...parkedSouthOfTornado(), money: 500 }, filmTuning).repairBill, 0);
 });

@@ -35,6 +35,10 @@
  * @property {number} balance The money in the bank. Today's earnings join it
  *   when the day ends.
  * @property {boolean} dayOver True once the day has ended.
+ * @property {number} damage The damage meter: 0 is unharmed, 1 is wrecked.
+ * @property {boolean} wrecked True once the car is wrecked. Nobody is hurt.
+ * @property {number} repairBill What the day's damage cost to repair. Worked
+ *   out when the day ends.
  */
 
 /**
@@ -43,7 +47,7 @@
  * @typedef {{ x: number, y: number }} Steering
  */
 
-/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'territoryMilesWide' | 'territoryMilesTall' | 'storm' | 'footage'> & { camera: Pick<typeof import('../tuning.js').tuning.camera, 'viewfinderDegrees' | 'panDegreesPerSecond'> }} Tuning */
+/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'territoryMilesWide' | 'territoryMilesTall' | 'storm' | 'footage' | 'danger'> & { camera: Pick<typeof import('../tuning.js').tuning.camera, 'viewfinderDegrees' | 'panDegreesPerSecond'> }} Tuning */
 
 /**
  * @param {Tuning} tuning
@@ -59,27 +63,31 @@ export function newGame(tuning) {
     money: 0,
     balance: 0,
     dayOver: false,
+    damage: 0,
+    wrecked: false,
+    repairBill: 0,
   };
 }
 
-/**
- * Ends the day early: the pause screen's "Head home".
- * @param {GameState} state
- * @returns {GameState}
- */
-export function headHome(state) {
-  return endDay(state);
-}
+/** Ends the day early: the pause screen's "Head home". */
+export const headHome = endDay;
 
 /**
- * Ends the day. The TV station buys the footage, and the money joins the
- * balance.
+ * Ends the day. The TV station buys the footage, the repair bill comes out,
+ * and what is left joins the balance, which never goes below zero.
  * @param {GameState} state
+ * @param {Tuning} tuning
  * @returns {GameState}
  */
-function endDay(state) {
+function endDay(state, tuning) {
   if (state.dayOver) return state;
-  return { ...state, dayOver: true, balance: state.balance + state.money };
+  const repairBill = Math.round(state.damage * tuning.danger.fullRepairCost);
+  return {
+    ...state,
+    dayOver: true,
+    repairBill,
+    balance: Math.max(0, state.balance + state.money - repairBill),
+  };
 }
 
 /**
@@ -155,8 +163,52 @@ export function step(state, steering, dt, tuning) {
 
   const storm = stormAt(state.storm.miles + tuning.storm.milesPerSecond * dt, tuning.storm);
   // The storm has nothing left to film, so the day is done.
-  if (storm.spent) return endDay({ ...state, storm });
+  if (storm.spent) return endDay({ ...state, storm }, tuning);
 
+  return battered(driveOrFilm({ ...state, storm }, steering, dt, tuning), dt, tuning);
+}
+
+/**
+ * What the wind does to the car over a moment. Close enough to the tornado it
+ * flips the car; a flip or a full damage meter wrecks it and ends the day.
+ * @param {GameState} state
+ * @param {number} dt
+ * @param {Tuning} tuning
+ * @returns {GameState}
+ */
+function battered(state, dt, tuning) {
+  if (state.storm.tornado === 0) return state;
+  const miles = milesToFunnel(state);
+  const damage = state.damage + windDamagePerSecond(miles, tuning) * dt;
+  if (miles <= tuning.danger.flipMiles || damage >= 1) {
+    return endDay({ ...state, damage: 1, wrecked: true }, tuning);
+  }
+  return { ...state, damage };
+}
+
+/**
+ * How much of the damage meter the wind fills each second at this many miles
+ * from the tornado. Nothing outside the danger ring; inside it the damage
+ * climbs steeply, so half way in does a quarter of the damage at the tornado.
+ * @param {number} miles
+ * @param {Tuning} tuning
+ */
+export function windDamagePerSecond(miles, tuning) {
+  const { ringMiles, windDamageAtTornado } = tuning.danger;
+  if (miles >= ringMiles) return 0;
+  return windDamageAtTornado * (1 - miles / ringMiles) ** 2;
+}
+
+/**
+ * The player's part of a moment: driving, or filming when pulled over.
+ * @param {GameState} state
+ * @param {Steering} steering
+ * @param {number} dt
+ * @param {Tuning} tuning
+ * @returns {GameState}
+ */
+function driveOrFilm(state, steering, dt, tuning) {
+  const { storm } = state;
   if (state.filming) {
     // Pulled over: the car stays put, left and right pan the camera, and the
     // seconds count, and pay, while the tornado is in the viewfinder box.
