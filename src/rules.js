@@ -17,6 +17,8 @@
  *   hook, 1 is a full hook with a tornado due or on the ground.
  * @property {number} tornado How big the tornado is: 0 is no tornado, 1 is
  *   full size. There is only ever one.
+ * @property {Point} funnel Where the hook curls and the tornado touches
+ *   down, on the storm's south-west side.
  */
 
 /**
@@ -24,6 +26,10 @@
  * @typedef {object} GameState
  * @property {Point} car
  * @property {Storm} storm
+ * @property {boolean} filming True while the car is pulled over to film.
+ * @property {number} camera Which way the camera points, in degrees round
+ *   from north: 0 is north, 90 is east.
+ * @property {number} footage How many seconds of tornado have been filmed.
  */
 
 /**
@@ -32,14 +38,54 @@
  * @typedef {{ x: number, y: number }} Steering
  */
 
-/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'territoryMilesWide' | 'territoryMilesTall' | 'storm'>} Tuning */
+/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'territoryMilesWide' | 'territoryMilesTall' | 'storm'> & { camera: Pick<typeof import('../tuning.js').tuning.camera, 'viewfinderDegrees' | 'panDegreesPerSecond'> }} Tuning */
 
 /**
  * @param {Tuning} tuning
  * @returns {GameState}
  */
 export function newGame(tuning) {
-  return { car: { x: 0, y: 0 }, storm: stormAt(0, tuning.storm) };
+  return { car: { x: 0, y: 0 }, storm: stormAt(0, tuning.storm), filming: false, camera: 0, footage: 0 };
+}
+
+/**
+ * Pulls the car over to film, or goes back to driving. The camera starts out
+ * pointed at the tornado.
+ * @param {GameState} state
+ * @returns {GameState}
+ */
+export function toggleFilming(state) {
+  return { ...state, filming: !state.filming, camera: bearingToFunnel(state) };
+}
+
+/**
+ * Whether the tornado is inside the viewfinder box right now.
+ * @param {GameState} state
+ * @param {Tuning} tuning
+ */
+export function tornadoInFrame(state, tuning) {
+  if (state.storm.tornado === 0) return false;
+  return Math.abs(cameraOffFunnel(state)) <= tuning.camera.viewfinderDegrees / 2;
+}
+
+/**
+ * How far the tornado is to the right of where the camera points, in
+ * degrees from -180 to 180. Less than zero means it is to the left.
+ * @param {GameState} state
+ */
+export function cameraOffFunnel(state) {
+  return ((bearingToFunnel(state) - state.camera + 540) % 360) - 180;
+}
+
+/**
+ * The direction from the car to where the tornado touches down, in degrees
+ * round from north.
+ * @param {GameState} state
+ */
+function bearingToFunnel(state) {
+  const { funnel } = state.storm;
+  const degrees = (Math.atan2(funnel.x - state.car.x, funnel.y - state.car.y) * 180) / Math.PI;
+  return (degrees + 360) % 360;
 }
 
 /**
@@ -51,6 +97,16 @@ export function newGame(tuning) {
  * @returns {GameState}
  */
 export function step(state, steering, dt, tuning) {
+  const storm = stormAt(state.storm.miles + tuning.storm.milesPerSecond * dt, tuning.storm);
+
+  if (state.filming) {
+    // Pulled over: the car stays put, left and right pan the camera, and the
+    // seconds count while the tornado is in the viewfinder box.
+    const camera = (state.camera + steering.x * tuning.camera.panDegreesPerSecond * dt + 360) % 360;
+    const next = { ...state, storm, camera };
+    return { ...next, footage: state.footage + (tornadoInFrame(next, tuning) ? dt : 0) };
+  }
+
   // Two arrows at once share the speed, so a diagonal is no faster.
   const miles = (tuning.carMilesPerSecond * dt) / (Math.hypot(steering.x, steering.y) || 1);
   /**
@@ -64,7 +120,7 @@ export function step(state, steering, dt, tuning) {
       x: inside(state.car.x + steering.x * miles, tuning.territoryMilesWide / 2),
       y: inside(state.car.y + steering.y * miles, tuning.territoryMilesTall / 2),
     },
-    storm: stormAt(state.storm.miles + tuning.storm.milesPerSecond * dt, tuning.storm),
+    storm,
   };
 }
 
@@ -103,5 +159,5 @@ function stormAt(miles, tuning) {
   } else if (next) {
     hook = Math.max(0, 1 - (next.start - along) / tuning.hookLead);
   }
-  return { miles, x, y, hook, tornado };
+  return { miles, x, y, hook, tornado, funnel: { x: x - 2.6, y: y - 2.6 } };
 }

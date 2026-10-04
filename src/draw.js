@@ -1,4 +1,5 @@
-// Drawing. Everything that paints on the canvas lives here.
+// Drawing the map view: the real map, the storm on the radar and the car.
+// The windshield view is painted by windshield.js.
 
 import { tuning } from '../tuning.js';
 import { squareMiles } from './map.js';
@@ -165,8 +166,7 @@ function drawStorm(ctx, storm) {
 
   // The hook curls out of the storm's south-west side. As it grows it gets
   // longer and winds tighter.
-  const hookX = storm.x - 2.6;
-  const hookY = storm.y - 2.6;
+  const { x: hookX, y: hookY } = storm.funnel;
   if (storm.hook > 0) {
     ctx.beginPath();
     ctx.arc(hookX, hookY, 1.9 - 0.8 * storm.hook, 0.25 * Math.PI, (0.25 - 1.5 * storm.hook) * Math.PI, true);

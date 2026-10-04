@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { newGame, step } from './rules.js';
+import { newGame, step, toggleFilming, tornadoInFrame } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
@@ -8,6 +8,7 @@ const tuning = {
   territoryMilesWide: 60,
   territoryMilesTall: 40,
   storm: { path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], milesPerSecond: 1, hookLead: 0.1, tornadoes: [] },
+  camera: { viewfinderDegrees: 20, panDegreesPerSecond: 30 },
 };
 
 test('a new game starts with the car in the middle of the territory', () => {
@@ -122,4 +123,69 @@ test('the storm makes as many tornadoes as the tuning lists', () => {
     state = next;
   }
   assert.equal(touchdowns, 3);
+});
+
+// Filming. The viewfinder box is 20 degrees wide and the camera pans 30
+// degrees a second.
+const filmTuning = stormTuning;
+
+/**
+ * A game with a tornado on the ground and the car parked due south of it.
+ * @param {number} [miles]
+ */
+function parkedSouthOfTornado(miles = 5) {
+  let state = newGame(filmTuning);
+  for (let i = 0; i < 44; i++) state = step(state, still, 0.25, filmTuning);
+  return { ...state, car: { x: state.storm.funnel.x, y: state.storm.funnel.y - miles } };
+}
+
+test('pulling over to film points the camera at the tornado', () => {
+  const state = toggleFilming(parkedSouthOfTornado());
+  assert.equal(state.filming, true);
+  assert.equal(state.camera, 0);
+});
+
+test('pulling over a second time goes back to driving', () => {
+  assert.equal(toggleFilming(toggleFilming(parkedSouthOfTornado())).filming, false);
+});
+
+test('the arrows do not move the car while filming', () => {
+  const parked = toggleFilming(parkedSouthOfTornado());
+  assert.deepEqual(step(parked, { x: 1, y: 1 }, 1, filmTuning).car, parked.car);
+});
+
+test('left and right pan the camera', () => {
+  const parked = toggleFilming(parkedSouthOfTornado());
+  assert.equal(step(parked, { x: 1, y: 0 }, 1, filmTuning).camera, 30);
+  assert.equal(step(parked, { x: -1, y: 0 }, 1, filmTuning).camera, 330);
+});
+
+test('the tornado is in frame only inside the viewfinder box', () => {
+  const parked = toggleFilming(parkedSouthOfTornado());
+  assert.equal(tornadoInFrame({ ...parked, camera: 9 }, filmTuning), true);
+  assert.equal(tornadoInFrame({ ...parked, camera: 11 }, filmTuning), false);
+  assert.equal(tornadoInFrame({ ...parked, camera: 355 }, filmTuning), true);
+});
+
+test('with no tornado on the ground, nothing is in frame', () => {
+  assert.equal(tornadoInFrame(toggleFilming(newGame(filmTuning)), filmTuning), false);
+});
+
+test('footage counts while the tornado is in the box', () => {
+  const parked = toggleFilming(parkedSouthOfTornado());
+  assert.equal(step(parked, still, 0.5, filmTuning).footage, 0.5);
+});
+
+test('footage does not count once the camera has panned off the tornado', () => {
+  const parked = { ...toggleFilming(parkedSouthOfTornado()), camera: 40 };
+  assert.equal(step(parked, still, 0.5, filmTuning).footage, 0);
+});
+
+test('footage does not count while driving', () => {
+  assert.equal(step(parkedSouthOfTornado(), still, 0.5, filmTuning).footage, 0);
+});
+
+test('the storm keeps moving while the player films', () => {
+  const parked = toggleFilming(parkedSouthOfTornado());
+  assert.equal(step(parked, still, 1, filmTuning).storm.miles, parked.storm.miles + 1);
 });

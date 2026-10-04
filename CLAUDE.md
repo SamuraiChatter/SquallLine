@@ -27,7 +27,8 @@ GitHub Pages publishes `main` at https://samuraichatter.github.io/SquallLine/.
 - `src/rules.js` holds the rules: plain functions from one game state to the
   next. They never touch the canvas or the page, so they run under Node, which
   is where the tests check them.
-- `src/draw.js` paints the canvas. `src/main.js` starts the game.
+- `src/draw.js` paints the map view and `src/windshield.js` the filming view.
+  `src/map.js` loads the real map. `src/main.js` starts the game.
 - Types are JSDoc comments. The editor checks them through `jsconfig.json`.
 - Paths in the page are relative, and a file's name is spelled the same way
   everywhere, capitals included. Pages serves the game from `/SquallLine/` and
