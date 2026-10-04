@@ -1,5 +1,5 @@
-// Starts the game: reads the arrow keys, steps the rules and paints the
-// result, once per frame.
+// Starts the game: reads the keys, steps the rules and paints the result,
+// once per frame.
 
 import { tuning } from '../tuning.js';
 import { draw } from './draw.js';
@@ -13,9 +13,15 @@ document.title = tuning.title;
 // The arrow keys being held down right now.
 /** @type {Set<string>} */
 const held = new Set();
+// Z flips between following the car and showing the whole territory.
+let wholeTerritory = false;
+
 addEventListener('keydown', (event) => {
   // Leave browser shortcuts such as Alt+Left (go back) alone.
-  if (!event.key.startsWith('Arrow') || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
+  // A key held down repeats; flip the view only on the first press.
+  if (event.key.toLowerCase() === 'z' && !event.repeat) wholeTerritory = !wholeTerritory;
+  if (!event.key.startsWith('Arrow')) return;
   held.add(event.key);
   event.preventDefault();
 });
@@ -26,7 +32,7 @@ addEventListener('blur', () => held.clear());
 /** @param {string} key */
 const pressed = (key) => (held.has(key) ? 1 : 0);
 
-let state = newGame();
+let state = newGame(tuning);
 let last = performance.now();
 
 /** @param {number} now */
@@ -42,7 +48,7 @@ function frame(now) {
     y: pressed('ArrowUp') - pressed('ArrowDown'),
   };
   state = step(state, steering, dt, tuning);
-  draw(ctx, state);
+  draw(ctx, state, wholeTerritory);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
