@@ -2,7 +2,7 @@
 // pause screen and the end-of-day summary.
 
 import { tuning } from '../tuning.js';
-import { milesToFunnel } from './rules.js';
+import { inDebrisZone, inHailCore, milesToFunnel } from './rules.js';
 
 /** @param {number} amount */
 const dollars = (amount) => `$${Math.round(amount).toLocaleString('en-US')}`;
@@ -25,13 +25,19 @@ export function drawMoney(ctx, state) {
  * Paints the damage meter along the top, in the middle.
  * @param {CanvasRenderingContext2D} ctx
  * @param {import('./rules.js').GameState} state
+ * @param {boolean} struck True for a moment after debris hits the car.
  */
-export function drawDamage(ctx, state) {
+export function drawDamage(ctx, state, struck) {
   const { width, height } = ctx.canvas;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // A debris strike flashes the whole screen.
+  if (struck) {
+    ctx.fillStyle = 'rgba(255, 140, 60, 0.3)';
+    ctx.fillRect(0, 0, width, height);
+  }
   const wide = width * 0.25;
   const left = (width - wide) / 2;
   const top = height * 0.045;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = 'rgba(5, 8, 12, 0.7)';
   ctx.fillRect(left, top, wide, 36);
   ctx.fillStyle = '#ff4d4d';
@@ -49,11 +55,17 @@ export function drawDamage(ctx, state) {
   ctx.fillStyle = '#dce6ee';
   ctx.fillText('DAMAGE', width / 2, top + 19);
 
-  // A warning on both views while the car is inside the danger ring.
-  if (state.storm.tornado > 0 && milesToFunnel(state) < tuning.danger.ringMiles) {
+  // A warning on both views, naming the worst thing hitting the car.
+  const miles = milesToFunnel(state);
+  const tornado = state.storm.tornado > 0;
+  let warning = '';
+  if (inHailCore(state.car, state.storm, tuning)) warning = 'HAIL! It is damaging the car.';
+  if (tornado && miles < tuning.danger.ringMiles) warning = 'TOO CLOSE! The wind is damaging the car.';
+  if (inDebrisZone(state, tuning)) warning = 'DEBRIS! Get out of here.';
+  if (warning) {
     ctx.fillStyle = '#ff4d4d';
     ctx.font = 'bold 40px system-ui, sans-serif';
-    ctx.fillText('TOO CLOSE! The wind is damaging the car.', width / 2, top + 70);
+    ctx.fillText(warning, width / 2, top + 70);
   }
 }
 

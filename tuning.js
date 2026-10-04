@@ -64,6 +64,29 @@ export const tuning = {
     fullRepairCost: 800,
   },
 
+  debris: {
+    // How many miles out from the tornado debris flies. A little wider than
+    // the tornado itself.
+    zoneMiles: 0.9,
+
+    // Inside the debris zone, something hits the car this often, in seconds.
+    strikeEverySeconds: 0.8,
+
+    // How much of the damage meter each strike fills. 0.06 is about a
+    // sixteenth.
+    damagePerStrike: 0.06,
+  },
+
+  hail: {
+    // The size of the hail core, the purple middle of the storm on the
+    // radar: how many miles it reaches along its length, and across it.
+    coreMilesLong: 1.5,
+    coreMilesWide: 1,
+
+    // How much of the damage meter hail fills each second inside the core.
+    damagePerSecond: 0.03,
+  },
+
   storm: {
     // The corners of the storm's path, from where it starts to where it ends.
     // Each is so many miles east (x) and north (y) of the middle of the

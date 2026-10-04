@@ -3,6 +3,7 @@
 
 import { tuning } from '../tuning.js';
 import { squareMiles } from './map.js';
+import { hailCore } from './rules.js';
 
 /**
  * Paints the game as it is right now.
@@ -58,6 +59,15 @@ export function draw(ctx, state, wholeTerritory, map) {
     ctx.lineWidth = 4 / pixelsPerMile;
     ctx.strokeStyle = '#ff4d4d';
     ctx.stroke();
+
+    // The debris zone: inside it flying debris hits the car.
+    ctx.beginPath();
+    ctx.arc(storm.funnel.x, storm.funnel.y, tuning.debris.zoneMiles, 0, Math.PI * 2);
+    ctx.lineWidth = 4 / pixelsPerMile;
+    ctx.setLineDash([5 / pixelsPerMile, 7 / pixelsPerMile]);
+    ctx.strokeStyle = '#c98a4b';
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   // The car. It keeps its size on screen in both views.
@@ -168,7 +178,6 @@ function drawStorm(ctx, storm) {
     { colour: '#1f9d3a', long: 7, wide: 4.5, shift: 2.2 },
     { colour: '#e8d21d', long: 5, wide: 3.1, shift: 1.4 },
     { colour: '#e02a1f', long: 3.2, wide: 2, shift: 0.7 },
-    { colour: '#b03be0', long: 1.5, wide: 1, shift: 0.3 },
   ];
   ctx.save();
   ctx.globalAlpha = 0.85;
@@ -181,6 +190,13 @@ function drawStorm(ctx, storm) {
     ctx.fillStyle = ring.colour;
     ctx.fill();
   }
+  // The purple core is the hail zone, so it is drawn exactly where the rules
+  // say hail falls.
+  const core = hailCore(storm, tuning);
+  ctx.beginPath();
+  ctx.ellipse(core.x, core.y, core.long, core.wide, Math.PI / 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#b03be0';
+  ctx.fill();
 
   // The hook curls out of the storm's south-west side. As it grows it gets
   // longer and winds tighter.

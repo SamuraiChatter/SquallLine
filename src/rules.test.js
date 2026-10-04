@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { headHome, newGame, payPerSecond, step, toggleFilming, tornadoInFrame, windDamagePerSecond } from './rules.js';
+import { hailCore, headHome, inHailCore, newGame, payPerSecond, step, toggleFilming, tornadoInFrame, windDamagePerSecond } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
@@ -11,6 +11,8 @@ const tuning = {
   camera: { viewfinderDegrees: 20, panDegreesPerSecond: 30 },
   footage: { ringMiles: 10, payAtEdge: 10, payAtTornado: 110 },
   danger: { ringMiles: 4, windDamageAtTornado: 0.8, flipMiles: 0.5, fullRepairCost: 400 },
+  debris: { zoneMiles: 1, strikeEverySeconds: 0.5, damagePerStrike: 0.1 },
+  hail: { coreMilesLong: 2, coreMilesWide: 1, damagePerSecond: 0.2 },
 };
 
 test('a new game starts with the car in the middle of the territory', () => {
@@ -139,7 +141,8 @@ const filmTuning = stormTuning;
 function parkedSouthOfTornado(miles = 5) {
   let state = newGame(filmTuning);
   for (let i = 0; i < 44; i++) state = step(state, still, 0.25, filmTuning);
-  return { ...state, car: { x: state.storm.funnel.x, y: state.storm.funnel.y - miles } };
+  // The storm started on top of the car, so wipe the hail damage from that.
+  return { ...state, car: { x: state.storm.funnel.x, y: state.storm.funnel.y - miles }, damage: 0 };
 }
 
 test('pulling over to film points the camera at the tornado', () => {
@@ -301,4 +304,64 @@ test('a wreck still sells its footage, and the balance never goes below zero', (
 
 test('a day with no damage has no repair bill', () => {
   assert.equal(headHome({ ...parkedSouthOfTornado(), money: 500 }, filmTuning).repairBill, 0);
+});
+
+// Debris and hail. Debris strikes within a mile of the tornado, once every
+// half second, each adding a tenth of the meter. The hail core is 2 miles
+// long (south-west to north-east) and 1 mile wide, and fills a fifth of the
+// meter a second.
+
+// The same game with the storm held still, so the car stays where it was put.
+const stillStorm = { ...filmTuning, storm: { ...filmTuning.storm, milesPerSecond: 0 } };
+
+/**
+ * Steps a game for so many seconds, a quarter second at a time.
+ * @param {ReturnType<typeof newGame>} state
+ * @param {number} seconds
+ * @param {typeof filmTuning} withTuning
+ */
+function after(state, seconds, withTuning) {
+  for (let i = 0; i < seconds * 4; i++) state = step(state, still, 0.25, withTuning);
+  return state;
+}
+
+test('the hail core is the long purple shape in the middle of the storm', () => {
+  const { storm } = newGame(filmTuning);
+  const core = hailCore(storm, filmTuning);
+  assert.equal(inHailCore({ x: core.x, y: core.y }, storm, filmTuning), true);
+  // 1.5 miles along its length is inside; 1.5 miles across it is not.
+  assert.equal(inHailCore({ x: core.x + 1.06, y: core.y + 1.06 }, storm, filmTuning), true);
+  assert.equal(inHailCore({ x: core.x - 1.06, y: core.y + 1.06 }, storm, filmTuning), false);
+});
+
+test('parking in the purple core raises the damage meter', () => {
+  const game = newGame(stillStorm);
+  const core = hailCore(game.storm, stillStorm);
+  const state = after({ ...game, car: { x: core.x, y: core.y } }, 0.5, stillStorm);
+  assert.ok(Math.abs(state.damage - 0.1) < 1e-9);
+});
+
+test('parking in the red or yellow, outside the core, does no damage', () => {
+  const game = newGame(stillStorm);
+  const core = hailCore(game.storm, stillStorm);
+  const state = after({ ...game, car: { x: core.x - 1.06, y: core.y + 1.06 } }, 0.5, stillStorm);
+  assert.equal(state.damage, 0);
+});
+
+test('near the tornado, debris strikes in bursts', () => {
+  const parked = parkedSouthOfTornado(0.8);
+  assert.equal(after(parked, 0.25, stillStorm).debrisStrikes, 0);
+  assert.equal(after(parked, 0.5, stillStorm).debrisStrikes, 1);
+  assert.equal(after(parked, 1, stillStorm).debrisStrikes, 2);
+});
+
+test('each debris strike adds damage on top of the wind', () => {
+  const noDebris = { ...stillStorm, debris: { ...stillStorm.debris, damagePerStrike: 0 } };
+  const parked = parkedSouthOfTornado(0.8);
+  const extra = after(parked, 1, stillStorm).damage - after(parked, 1, noDebris).damage;
+  assert.ok(Math.abs(extra - 0.2) < 1e-9);
+});
+
+test('outside the debris zone nothing strikes', () => {
+  assert.equal(after(parkedSouthOfTornado(2), 1, stillStorm).debrisStrikes, 0);
 });

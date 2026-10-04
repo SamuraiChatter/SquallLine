@@ -36,6 +36,9 @@
  *   when the day ends.
  * @property {boolean} dayOver True once the day has ended.
  * @property {number} damage The damage meter: 0 is unharmed, 1 is wrecked.
+ * @property {number} debrisClock Seconds in the debris zone since the last
+ *   strike.
+ * @property {number} debrisStrikes How many times debris has hit the car.
  * @property {boolean} wrecked True once the car is wrecked. Nobody is hurt.
  * @property {number} repairBill What the day's damage cost to repair. Worked
  *   out when the day ends.
@@ -47,7 +50,7 @@
  * @typedef {{ x: number, y: number }} Steering
  */
 
-/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'territoryMilesWide' | 'territoryMilesTall' | 'storm' | 'footage' | 'danger'> & { camera: Pick<typeof import('../tuning.js').tuning.camera, 'viewfinderDegrees' | 'panDegreesPerSecond'> }} Tuning */
+/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'territoryMilesWide' | 'territoryMilesTall' | 'storm' | 'footage' | 'danger' | 'debris' | 'hail'> & { camera: Pick<typeof import('../tuning.js').tuning.camera, 'viewfinderDegrees' | 'panDegreesPerSecond'> }} Tuning */
 
 /**
  * @param {Tuning} tuning
@@ -64,6 +67,8 @@ export function newGame(tuning) {
     balance: 0,
     dayOver: false,
     damage: 0,
+    debrisClock: 0,
+    debrisStrikes: 0,
     wrecked: false,
     repairBill: 0,
   };
@@ -177,13 +182,77 @@ export function step(state, steering, dt, tuning) {
  * @returns {GameState}
  */
 function battered(state, dt, tuning) {
-  if (state.storm.tornado === 0) return state;
-  const miles = milesToFunnel(state);
-  const damage = state.damage + windDamagePerSecond(miles, tuning) * dt;
-  if (miles <= tuning.danger.flipMiles || damage >= 1) {
-    return endDay({ ...state, damage: 1, wrecked: true }, tuning);
+  let { damage, debrisClock, debrisStrikes } = state;
+  let flipped = false;
+
+  // Hail falls from the storm's purple core, tornado or not.
+  if (inHailCore(state.car, state.storm, tuning)) damage += tuning.hail.damagePerSecond * dt;
+
+  if (state.storm.tornado > 0) {
+    const miles = milesToFunnel(state);
+    damage += windDamagePerSecond(miles, tuning) * dt;
+    flipped = miles <= tuning.danger.flipMiles;
+
   }
-  return { ...state, damage };
+
+  // Debris hits in bursts: one strike each time the clock comes round, for as
+  // long as the car stays in the debris zone. Leaving the zone, or the
+  // tornado dying, starts the clock again.
+  if (inDebrisZone(state, tuning)) {
+    // Never quicker than twenty a second, whatever the tuning file says.
+    const every = Math.max(0.05, tuning.debris.strikeEverySeconds);
+    debrisClock += dt;
+    while (debrisClock >= every) {
+      debrisClock -= every;
+      debrisStrikes += 1;
+      damage += tuning.debris.damagePerStrike;
+    }
+  } else {
+    debrisClock = 0;
+  }
+
+  if (flipped || damage >= 1) {
+    return endDay({ ...state, damage: 1, debrisClock, debrisStrikes, wrecked: true }, tuning);
+  }
+  return { ...state, damage, debrisClock, debrisStrikes };
+}
+
+/**
+ * Whether the car is close enough to a tornado on the ground for debris to
+ * hit it.
+ * @param {GameState} state
+ * @param {Tuning} tuning
+ */
+export function inDebrisZone(state, tuning) {
+  return state.storm.tornado > 0 && milesToFunnel(state) <= tuning.debris.zoneMiles;
+}
+
+/**
+ * The storm's hail core: the long purple shape in the radar picture. It lies
+ * south-west to north-east.
+ * @param {Storm} storm
+ * @param {Tuning} tuning
+ * @returns {{ x: number, y: number, long: number, wide: number }} Its middle,
+ *   and how far it reaches along its length and across it, in miles.
+ */
+export function hailCore(storm, tuning) {
+  return { x: storm.x + 0.3, y: storm.y + 0.3, long: tuning.hail.coreMilesLong, wide: tuning.hail.coreMilesWide };
+}
+
+/**
+ * Whether a place is inside the hail core.
+ * @param {Point} point
+ * @param {Storm} storm
+ * @param {Tuning} tuning
+ */
+export function inHailCore(point, storm, tuning) {
+  const core = hailCore(storm, tuning);
+  const dx = point.x - core.x;
+  const dy = point.y - core.y;
+  // How far the place is along the core's length, and across it.
+  const along = (dx + dy) / Math.SQRT2;
+  const across = (dy - dx) / Math.SQRT2;
+  return (along / core.long) ** 2 + (across / core.wide) ** 2 <= 1;
 }
 
 /**
