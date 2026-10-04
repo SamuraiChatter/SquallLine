@@ -5,7 +5,7 @@
 // is written on the placeholder so it is easy to see which drawing goes where.
 
 import { tuning } from '../tuning.js';
-import { cameraOffFunnel, tornadoInFrame } from './rules.js';
+import { cameraOffFunnel, milesToFunnel, payPerSecond, tornadoInFrame } from './rules.js';
 
 /**
  * Writes a placeholder's file name on it.
@@ -35,7 +35,7 @@ export function drawWindshield(ctx, state) {
   // art/sky.png
   ctx.fillStyle = '#3d4a57';
   ctx.fillRect(0, 0, width, horizon);
-  label(ctx, 'art/sky.png', width * 0.05, 20);
+  label(ctx, 'art/sky.png', width * 0.05, height * 0.13);
 
   // art/ground.png
   ctx.fillStyle = '#2f3b2a';
@@ -44,10 +44,10 @@ export function drawWindshield(ctx, state) {
 
   // art/tornado.png. How far left or right it sits follows its direction
   // from the car, and its size follows how near it is.
-  const { car, storm } = state;
+  const { storm } = state;
   if (storm.tornado > 0) {
     const x = width / 2 + (cameraOffFunnel(state) / tuning.camera.viewDegrees) * width;
-    const miles = Math.hypot(storm.funnel.x - car.x, storm.funnel.y - car.y);
+    const miles = milesToFunnel(state);
     // Twice as near looks twice as tall, up to filling the sky.
     const tall = Math.min(horizon * 1.1, (horizon * 1.6) / Math.max(miles, 0.5)) * (0.4 + 0.6 * storm.tornado);
     const top = horizon - tall;
@@ -82,4 +82,11 @@ export function drawWindshield(ctx, state) {
   ctx.textAlign = 'right';
   ctx.textBaseline = 'top';
   ctx.fillText(`${filming ? '● REC' : 'REC'}  ${state.footage.toFixed(1)} s`, width * 0.95, height * 0.035);
+
+  // In the box but outside the footage ring: say why it is not paying.
+  if (filming && payPerSecond(milesToFunnel(state), tuning) === 0) {
+    ctx.font = '40px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Too far away to sell. Get inside the footage ring.', width / 2, height * 0.76);
+  }
 }

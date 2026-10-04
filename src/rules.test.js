@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { newGame, step, toggleFilming, tornadoInFrame } from './rules.js';
+import { headHome, newGame, payPerSecond, step, toggleFilming, tornadoInFrame } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
@@ -9,6 +9,7 @@ const tuning = {
   territoryMilesTall: 40,
   storm: { path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], milesPerSecond: 1, hookLead: 0.1, tornadoes: [] },
   camera: { viewfinderDegrees: 20, panDegreesPerSecond: 30 },
+  footage: { ringMiles: 10, payAtEdge: 10, payAtTornado: 110 },
 };
 
 test('a new game starts with the car in the middle of the territory', () => {
@@ -79,7 +80,8 @@ test('the storm travels along its path, around the corner', () => {
 });
 
 test('the storm stops at the end of its path', () => {
-  const { x, y } = stormAfter(100);
+  const noTornadoes = { ...stormTuning, storm: { ...stormTuning.storm, tornadoes: [] } };
+  const { x, y } = stormAfter(100, noTornadoes);
   assert.deepEqual({ x, y }, { x: 10, y: 10 });
 });
 
@@ -188,4 +190,51 @@ test('footage does not count while driving', () => {
 test('the storm keeps moving while the player films', () => {
   const parked = toggleFilming(parkedSouthOfTornado());
   assert.equal(step(parked, still, 1, filmTuning).storm.miles, parked.storm.miles + 1);
+});
+
+// Pay. The footage ring is 10 miles out; a second of footage pays 10 at its
+// edge, rising to 110 right at the tornado.
+
+test('footage from outside the ring pays nothing', () => {
+  assert.equal(payPerSecond(10.5, filmTuning), 0);
+});
+
+test('footage pays more the closer the car is', () => {
+  assert.equal(payPerSecond(10, filmTuning), 10);
+  assert.equal(payPerSecond(5, filmTuning), 60);
+  assert.equal(payPerSecond(0, filmTuning), 110);
+});
+
+test('filming from inside the ring earns money', () => {
+  const parked = toggleFilming(parkedSouthOfTornado(5));
+  assert.ok(step(parked, still, 0.5, filmTuning).money > 0);
+});
+
+test('filming from outside the ring earns nothing', () => {
+  const parked = toggleFilming(parkedSouthOfTornado(12));
+  assert.equal(step(parked, still, 0.5, filmTuning).money, 0);
+});
+
+test('the same seconds pay more from half way into the ring than from its edge', () => {
+  const near = step(toggleFilming(parkedSouthOfTornado(5)), still, 0.5, filmTuning).money;
+  const far = step(toggleFilming(parkedSouthOfTornado(9)), still, 0.5, filmTuning).money;
+  assert.ok(near > far && far > 0);
+});
+
+test('the day ends when the last tornado dies, and the earnings join the balance', () => {
+  let state = { ...parkedSouthOfTornado(), money: 50 };
+  for (let i = 0; i < 20; i++) state = step(state, still, 0.25, filmTuning);
+  assert.equal(state.dayOver, true);
+  assert.equal(state.balance, 50);
+});
+
+test('heading home ends the day early with the same sums', () => {
+  const state = headHome({ ...parkedSouthOfTornado(), money: 50 });
+  assert.equal(state.dayOver, true);
+  assert.equal(state.balance, 50);
+});
+
+test('once the day is over nothing moves', () => {
+  const done = headHome(parkedSouthOfTornado());
+  assert.deepEqual(step(done, { x: 1, y: 1 }, 5, filmTuning), done);
 });

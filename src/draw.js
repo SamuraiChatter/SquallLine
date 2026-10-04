@@ -42,6 +42,17 @@ export function draw(ctx, state, wholeTerritory, map) {
 
   drawStorm(ctx, storm);
 
+  // The footage ring: film from inside it to get paid.
+  if (storm.tornado > 0) {
+    ctx.beginPath();
+    ctx.arc(storm.funnel.x, storm.funnel.y, tuning.footage.ringMiles, 0, Math.PI * 2);
+    ctx.lineWidth = 3 / pixelsPerMile;
+    ctx.setLineDash([14 / pixelsPerMile, 10 / pixelsPerMile]);
+    ctx.strokeStyle = '#9be28c';
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   // The car. It keeps its size on screen in both views.
   ctx.beginPath();
   ctx.arc(car.x, car.y, 14 / pixelsPerMile, 0, Math.PI * 2);
