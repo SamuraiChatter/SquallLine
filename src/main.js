@@ -70,6 +70,9 @@ addEventListener('blur', () => held.clear());
 const pressed = (key) => (held.has(key) ? 1 : 0);
 
 let state = newGame(tuning);
+// How many debris strikes have been shown, and when the last one landed.
+let strikesSeen = 0;
+let struckAt = -Infinity;
 let last = performance.now();
 
 /** @param {number} now */
@@ -85,10 +88,15 @@ function frame(now) {
     y: pressed('ArrowUp') - pressed('ArrowDown'),
   };
   if (!paused) state = step(state, steering, dt, tuning);
+  // Remember when debris last hit, so the screen can flash for a moment.
+  if (state.debrisStrikes > strikesSeen) {
+    strikesSeen = state.debrisStrikes;
+    struckAt = now;
+  }
   if (state.filming) drawWindshield(ctx, state);
   else draw(ctx, state, wholeTerritory, map);
   drawMoney(ctx, state);
-  drawDamage(ctx, state);
+  drawDamage(ctx, state, now - struckAt < 180);
   if (state.dayOver) drawSummary(ctx, state);
   else if (paused) drawPause(ctx);
   requestAnimationFrame(frame);

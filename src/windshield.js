@@ -5,7 +5,7 @@
 // is written on the placeholder so it is easy to see which drawing goes where.
 
 import { tuning } from '../tuning.js';
-import { cameraOffFunnel, milesToFunnel, payPerSecond, tornadoInFrame } from './rules.js';
+import { cameraOffFunnel, inDebrisZone, inHailCore, milesToFunnel, payPerSecond, tornadoInFrame } from './rules.js';
 
 /**
  * Writes a placeholder's file name on it.
@@ -60,6 +60,37 @@ export function drawWindshield(ctx, state) {
     ctx.fillStyle = '#1b2026';
     ctx.fill();
     label(ctx, 'art/tornado.png', x + tall * 0.32, top);
+  }
+
+  // The weather between the car and the tornado. Each bit of debris or hail
+  // keeps its own track, worked out from its number and the clock.
+  const seconds = performance.now() / 1000;
+
+  // art/debris.png: debris flies across the scene while it is hitting the car.
+  if (inDebrisZone(state, tuning)) {
+    ctx.fillStyle = '#6b4a2b';
+    for (let i = 0; i < 24; i++) {
+      const across = (seconds * (0.9 + (i % 5) * 0.25) + i * 0.137) % 1;
+      const y = horizon * (0.15 + ((i * 0.61) % 1) * 0.95) + Math.sin(seconds * 6 + i) * 20;
+      const size = 14 + (i % 4) * 9;
+      ctx.fillRect(across * width, y, size * 1.6, size);
+    }
+    label(ctx, 'art/debris.png', width * 0.05, height * 0.2);
+  }
+
+  // art/hail.png: hail falls, and bounces off the ground, inside the core.
+  if (inHailCore(state.car, storm, tuning)) {
+    ctx.fillStyle = '#eef4f8';
+    for (let i = 0; i < 60; i++) {
+      const fall = (seconds * (1.6 + (i % 3) * 0.4) + i * 0.071) % 1.25;
+      const x = ((i * 0.618) % 1) * width;
+      // Past the ground, the stone hops back up a little before it is gone.
+      const y = fall <= 1 ? fall * horizon * 1.25 : horizon * 1.25 - Math.sin((fall - 1) * 4 * Math.PI) * 40;
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    label(ctx, 'art/hail.png', width * 0.05, height * 0.27);
   }
 
   // art/dashboard.png: the dashboard along the bottom and a pillar each side.
