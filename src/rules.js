@@ -32,7 +32,7 @@
  * @typedef {{ x: number, y: number }} Steering
  */
 
-/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'territoryMiles' | 'storm'>} Tuning */
+/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'territoryMilesWide' | 'territoryMilesTall' | 'storm'>} Tuning */
 
 /**
  * @param {Tuning} tuning
@@ -53,14 +53,16 @@ export function newGame(tuning) {
 export function step(state, steering, dt, tuning) {
   // Two arrows at once share the speed, so a diagonal is no faster.
   const miles = (tuning.carMilesPerSecond * dt) / (Math.hypot(steering.x, steering.y) || 1);
-  const edge = tuning.territoryMiles / 2;
-  /** @param {number} n */
-  const inside = (n) => Math.max(-edge, Math.min(edge, n));
+  /**
+   * @param {number} n
+   * @param {number} edge
+   */
+  const inside = (n, edge) => Math.max(-edge, Math.min(edge, n));
   return {
     ...state,
     car: {
-      x: inside(state.car.x + steering.x * miles),
-      y: inside(state.car.y + steering.y * miles),
+      x: inside(state.car.x + steering.x * miles, tuning.territoryMilesWide / 2),
+      y: inside(state.car.y + steering.y * miles, tuning.territoryMilesTall / 2),
     },
     storm: stormAt(state.storm.miles + tuning.storm.milesPerSecond * dt, tuning.storm),
   };

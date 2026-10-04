@@ -3,12 +3,23 @@
 
 import { tuning } from '../tuning.js';
 import { draw } from './draw.js';
+import { loadMap } from './map.js';
 import { newGame, step } from './rules.js';
 
 const canvas = /** @type {HTMLCanvasElement} */ (document.querySelector('canvas'));
 const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
 
 document.title = tuning.title;
+
+// The game waits here until the map has arrived.
+const map = await loadMap().catch((error) => {
+  // Say so on the screen: otherwise a map that fails to load is just black.
+  ctx.fillStyle = '#dce6ee';
+  ctx.font = '48px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('The map did not load. Try refreshing the page.', canvas.width / 2, canvas.height / 2);
+  throw error;
+});
 
 // The arrow keys being held down right now.
 /** @type {Set<string>} */
@@ -48,7 +59,7 @@ function frame(now) {
     y: pressed('ArrowUp') - pressed('ArrowDown'),
   };
   state = step(state, steering, dt, tuning);
-  draw(ctx, state, wholeTerritory);
+  draw(ctx, state, wholeTerritory, map);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

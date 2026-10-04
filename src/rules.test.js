@@ -5,7 +5,8 @@ import { newGame, step } from './rules.js';
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
   carMilesPerSecond: 2,
-  territoryMiles: 60,
+  territoryMilesWide: 60,
+  territoryMilesTall: 40,
   storm: { path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], milesPerSecond: 1, hookLead: 0.1, tornadoes: [] },
 };
 
@@ -31,7 +32,7 @@ test('letting go stops the car where it is', () => {
 
 test('the car cannot leave the territory', () => {
   const far = step(newGame(tuning), { x: 1, y: -1 }, 100, tuning);
-  assert.deepEqual(far.car, { x: 30, y: -30 });
+  assert.deepEqual(far.car, { x: 30, y: -20 });
 });
 
 test('driving on a diagonal is no faster than driving straight', () => {
