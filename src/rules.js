@@ -19,6 +19,7 @@
  *   full size. There is only ever one.
  * @property {Point} funnel Where the hook curls and the tornado touches
  *   down, on the storm's south-west side.
+ * @property {boolean} spent True once the storm's last tornado has died.
  */
 
 /**
@@ -30,6 +31,10 @@
  * @property {number} camera Which way the camera points, in degrees round
  *   from north: 0 is north, 90 is east.
  * @property {number} footage How many seconds of tornado have been filmed.
+ * @property {number} money What today's footage has earned so far.
+ * @property {number} balance The money in the bank. Today's earnings join it
+ *   when the day ends.
+ * @property {boolean} dayOver True once the day has ended.
  */
 
 /**
@@ -38,14 +43,63 @@
  * @typedef {{ x: number, y: number }} Steering
  */
 
-/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'territoryMilesWide' | 'territoryMilesTall' | 'storm'> & { camera: Pick<typeof import('../tuning.js').tuning.camera, 'viewfinderDegrees' | 'panDegreesPerSecond'> }} Tuning */
+/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'territoryMilesWide' | 'territoryMilesTall' | 'storm' | 'footage'> & { camera: Pick<typeof import('../tuning.js').tuning.camera, 'viewfinderDegrees' | 'panDegreesPerSecond'> }} Tuning */
 
 /**
  * @param {Tuning} tuning
  * @returns {GameState}
  */
 export function newGame(tuning) {
-  return { car: { x: 0, y: 0 }, storm: stormAt(0, tuning.storm), filming: false, camera: 0, footage: 0 };
+  return {
+    car: { x: 0, y: 0 },
+    storm: stormAt(0, tuning.storm),
+    filming: false,
+    camera: 0,
+    footage: 0,
+    money: 0,
+    balance: 0,
+    dayOver: false,
+  };
+}
+
+/**
+ * Ends the day early: the pause screen's "Head home".
+ * @param {GameState} state
+ * @returns {GameState}
+ */
+export function headHome(state) {
+  return endDay(state);
+}
+
+/**
+ * Ends the day. The TV station buys the footage, and the money joins the
+ * balance.
+ * @param {GameState} state
+ * @returns {GameState}
+ */
+function endDay(state) {
+  if (state.dayOver) return state;
+  return { ...state, dayOver: true, balance: state.balance + state.money };
+}
+
+/**
+ * What one second of footage pays, filmed from this many miles away. Nothing
+ * from outside the footage ring; inside it, more the closer the car is.
+ * @param {number} miles
+ * @param {Tuning} tuning
+ */
+export function payPerSecond(miles, tuning) {
+  const { ringMiles, payAtEdge, payAtTornado } = tuning.footage;
+  if (miles > ringMiles) return 0;
+  return payAtEdge + (payAtTornado - payAtEdge) * (1 - miles / ringMiles);
+}
+
+/**
+ * How many miles the car is from where the tornado touches down.
+ * @param {GameState} state
+ */
+export function milesToFunnel(state) {
+  return Math.hypot(state.storm.funnel.x - state.car.x, state.storm.funnel.y - state.car.y);
 }
 
 /**
@@ -97,14 +151,23 @@ function bearingToFunnel(state) {
  * @returns {GameState}
  */
 export function step(state, steering, dt, tuning) {
+  if (state.dayOver) return state;
+
   const storm = stormAt(state.storm.miles + tuning.storm.milesPerSecond * dt, tuning.storm);
+  // The storm has nothing left to film, so the day is done.
+  if (storm.spent) return endDay({ ...state, storm });
 
   if (state.filming) {
     // Pulled over: the car stays put, left and right pan the camera, and the
-    // seconds count while the tornado is in the viewfinder box.
+    // seconds count, and pay, while the tornado is in the viewfinder box.
     const camera = (state.camera + steering.x * tuning.camera.panDegreesPerSecond * dt + 360) % 360;
     const next = { ...state, storm, camera };
-    return { ...next, footage: state.footage + (tornadoInFrame(next, tuning) ? dt : 0) };
+    const filmed = tornadoInFrame(next, tuning) ? dt : 0;
+    return {
+      ...next,
+      footage: state.footage + filmed,
+      money: state.money + filmed * payPerSecond(milesToFunnel(next), tuning),
+    };
   }
 
   // Two arrows at once share the speed, so a diagonal is no faster.
@@ -159,5 +222,7 @@ function stormAt(miles, tuning) {
   } else if (next) {
     hook = Math.max(0, 1 - (next.start - along) / tuning.hookLead);
   }
-  return { miles, x, y, hook, tornado, funnel: { x: x - 2.6, y: y - 2.6 } };
+  const last = tuning.tornadoes.at(-1);
+  const spent = last !== undefined && along >= last.end;
+  return { miles, x, y, hook, tornado, funnel: { x: x - 2.6, y: y - 2.6 }, spent };
 }

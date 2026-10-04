@@ -4,7 +4,8 @@
 import { tuning } from '../tuning.js';
 import { draw } from './draw.js';
 import { loadMap } from './map.js';
-import { newGame, step, toggleFilming } from './rules.js';
+import { drawMoney, drawPause, drawSummary } from './hud.js';
+import { headHome, newGame, step, toggleFilming } from './rules.js';
 import { drawWindshield } from './windshield.js';
 
 const canvas = /** @type {HTMLCanvasElement} */ (document.querySelector('canvas'));
@@ -27,12 +28,26 @@ const map = await loadMap().catch((error) => {
 const held = new Set();
 // Z flips between following the car and showing the whole territory.
 let wholeTerritory = false;
+// True while the pause screen is up. Nothing moves until it goes.
+let paused = false;
 
 addEventListener('keydown', (event) => {
   // Leave browser shortcuts such as Alt+Left (go back) alone.
   if (event.altKey || event.ctrlKey || event.metaKey) return;
-  // A key held down repeats; flip the view only on the first press.
-  if (event.key.toLowerCase() === 'z' && !event.repeat && !state.filming) wholeTerritory = !wholeTerritory;
+  // Space and the arrows belong to the game, on every screen: do not let them
+  // scroll the page.
+  if (event.key === ' ' || event.key.startsWith('Arrow')) event.preventDefault();
+  const key = event.key.toLowerCase();
+  // P pauses and carries on. While paused, H heads home and ends the day.
+  // A key held down repeats; act only on the first press.
+  if (key === 'p' && !event.repeat && !state.dayOver) paused = !paused;
+  if (key === 'h' && paused) {
+    state = headHome(state);
+    paused = false;
+  }
+  if (paused || state.dayOver) return;
+
+  if (key === 'z' && !event.repeat && !state.filming) wholeTerritory = !wholeTerritory;
   // Space pulls over to film, and Space again drives on.
   if (event.key === ' ') {
     if (!event.repeat) {
@@ -69,9 +84,12 @@ function frame(now) {
     x: pressed('ArrowRight') - pressed('ArrowLeft'),
     y: pressed('ArrowUp') - pressed('ArrowDown'),
   };
-  state = step(state, steering, dt, tuning);
+  if (!paused) state = step(state, steering, dt, tuning);
   if (state.filming) drawWindshield(ctx, state);
   else draw(ctx, state, wholeTerritory, map);
+  drawMoney(ctx, state);
+  if (state.dayOver) drawSummary(ctx, state);
+  else if (paused) drawPause(ctx);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

@@ -31,6 +31,21 @@ export const tuning = {
     panDegreesPerSecond: 35,
   },
 
+  // The TV station that buys the footage. Its name shows on the summary at
+  // the end of the day.
+  tvStation: 'Twister TV',
+
+  footage: {
+    // How many miles out from the tornado the footage ring reaches. Footage
+    // shot from outside the ring pays nothing.
+    ringMiles: 6,
+
+    // What one second of footage pays, in dollars: at the ring's edge, and
+    // right next to the tornado. In between pays in between.
+    payAtEdge: 20,
+    payAtTornado: 200,
+  },
+
   storm: {
     // The corners of the storm's path, from where it starts to where it ends.
     // Each is so many miles east (x) and north (y) of the middle of the
