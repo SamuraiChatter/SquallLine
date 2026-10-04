@@ -18,6 +18,19 @@ export const tuning = {
   territoryMilesWide: 56.5,
   territoryMilesTall: 62,
 
+  camera: {
+    // How much of the world fits across the windshield, in degrees. A full
+    // turn is 360. Smaller zooms the view in.
+    viewDegrees: 70,
+
+    // How wide the viewfinder box is, in degrees. Footage only counts while
+    // the tornado is inside it. Smaller makes filming harder.
+    viewfinderDegrees: 16,
+
+    // How fast left and right swing the camera, in degrees each second.
+    panDegreesPerSecond: 35,
+  },
+
   storm: {
     // The corners of the storm's path, from where it starts to where it ends.
     // Each is so many miles east (x) and north (y) of the middle of the

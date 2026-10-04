@@ -4,7 +4,8 @@
 import { tuning } from '../tuning.js';
 import { draw } from './draw.js';
 import { loadMap } from './map.js';
-import { newGame, step } from './rules.js';
+import { newGame, step, toggleFilming } from './rules.js';
+import { drawWindshield } from './windshield.js';
 
 const canvas = /** @type {HTMLCanvasElement} */ (document.querySelector('canvas'));
 const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
@@ -31,7 +32,17 @@ addEventListener('keydown', (event) => {
   // Leave browser shortcuts such as Alt+Left (go back) alone.
   if (event.altKey || event.ctrlKey || event.metaKey) return;
   // A key held down repeats; flip the view only on the first press.
-  if (event.key.toLowerCase() === 'z' && !event.repeat) wholeTerritory = !wholeTerritory;
+  if (event.key.toLowerCase() === 'z' && !event.repeat && !state.filming) wholeTerritory = !wholeTerritory;
+  // Space pulls over to film, and Space again drives on.
+  if (event.key === ' ') {
+    if (!event.repeat) {
+      state = toggleFilming(state);
+      // An arrow still held from driving must not swing the camera, nor one
+      // held from panning drive the car off.
+      held.clear();
+    }
+    event.preventDefault();
+  }
   if (!event.key.startsWith('Arrow')) return;
   held.add(event.key);
   event.preventDefault();
@@ -59,7 +70,8 @@ function frame(now) {
     y: pressed('ArrowUp') - pressed('ArrowDown'),
   };
   state = step(state, steering, dt, tuning);
-  draw(ctx, state, wholeTerritory, map);
+  if (state.filming) drawWindshield(ctx, state);
+  else draw(ctx, state, wholeTerritory, map);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
