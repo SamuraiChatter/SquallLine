@@ -15,3 +15,12 @@ canvas {
   height: 100%;
   object-fit: contain;
 }
+
+/* The map's credit sits in the bottom right corner of the window. */
+.credit {
+  position: fixed;
+  right: 8px;
+  bottom: 6px;
+  color: #a9b8c4;
+  font: 12px system-ui, sans-serif;
+}

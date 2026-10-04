@@ -1,6 +1,7 @@
 // Drawing. Everything that paints on the canvas lives here.
 
 import { tuning } from '../tuning.js';
+import { squareMiles } from './map.js';
 
 /**
  * Paints the game as it is right now.
@@ -8,16 +9,18 @@ import { tuning } from '../tuning.js';
  * @param {import('./rules.js').GameState} state
  * @param {boolean} wholeTerritory True to show the whole territory, false to
  *   follow the car.
+ * @param {import('./map.js').GameMap} map
  */
-export function draw(ctx, state, wholeTerritory) {
+export function draw(ctx, state, wholeTerritory, map) {
   const { width, height } = ctx.canvas;
   const { car, storm } = state;
-  const edge = tuning.territoryMiles / 2;
+  const halfWide = tuning.territoryMilesWide / 2;
+  const halfTall = tuning.territoryMilesTall / 2;
 
   // The middle of the view, and how many pixels a mile takes up.
   const middle = wholeTerritory ? { x: 0, y: 0 } : car;
   const pixelsPerMile = wholeTerritory
-    ? Math.min(width, height) / (tuning.territoryMiles * 1.05)
+    ? Math.min(width / tuning.territoryMilesWide, height / tuning.territoryMilesTall) / 1.05
     : width / tuning.viewMiles;
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -29,22 +32,12 @@ export function draw(ctx, state, wholeTerritory) {
   ctx.scale(pixelsPerMile, -pixelsPerMile);
   ctx.translate(-middle.x, -middle.y);
 
-  // A faint line every mile, so the driving shows until the real map arrives.
-  ctx.beginPath();
-  for (let mile = Math.ceil(-edge); mile <= edge; mile++) {
-    ctx.moveTo(mile, -edge);
-    ctx.lineTo(mile, edge);
-    ctx.moveTo(-edge, mile);
-    ctx.lineTo(edge, mile);
-  }
-  ctx.lineWidth = 1 / pixelsPerMile;
-  ctx.strokeStyle = '#1c2a36';
-  ctx.stroke();
+  drawMap(ctx, map, wholeTerritory, middle, pixelsPerMile);
 
   // The edge of the territory.
   ctx.lineWidth = 4 / pixelsPerMile;
   ctx.strokeStyle = '#5b7488';
-  ctx.strokeRect(-edge, -edge, edge * 2, edge * 2);
+  ctx.strokeRect(-halfWide, -halfTall, halfWide * 2, halfTall * 2);
 
   drawStorm(ctx, storm);
 
@@ -81,6 +74,68 @@ export function draw(ctx, state, wholeTerritory) {
   }
 }
 
+// How each tier of road is drawn, most important first: its colour and its
+// width in pixels. Interstates are the brightest.
+const roadStyles = [
+  { colour: '#c4d2dc', width: 3.5 },
+  { colour: '#7f909e', width: 2.2 },
+  { colour: '#4d5d6b', width: 1.5 },
+  { colour: '#303d49', width: 1 },
+];
+
+// The size of a place's name in pixels, by what kind of place it is.
+/** @type {Record<string, number>} */
+const nameSizes = { city: 38, town: 26, village: 20 };
+
+/**
+ * Paints the county lines, the roads and the town names.
+ * @param {CanvasRenderingContext2D} ctx Already set up to draw in miles.
+ * @param {import('./map.js').GameMap} map
+ * @param {boolean} wholeTerritory
+ * @param {import('./rules.js').Point} middle The middle of the view.
+ * @param {number} pixelsPerMile
+ */
+function drawMap(ctx, map, wholeTerritory, middle, pixelsPerMile) {
+  const { width, height } = ctx.canvas;
+  const halfWide = width / 2 / pixelsPerMile;
+  const halfTall = height / 2 / pixelsPerMile;
+
+  ctx.lineWidth = 1.5 / pixelsPerMile;
+  ctx.strokeStyle = '#3f5870';
+  ctx.stroke(map.counties);
+
+  // Only the squares of road the view touches. The whole-territory view
+  // leaves out the two least important tiers, which would be a grey blur.
+  const tiers = wholeTerritory ? 2 : roadStyles.length;
+  for (let tier = tiers - 1; tier >= 0; tier--) {
+    ctx.lineWidth = roadStyles[tier].width / pixelsPerMile;
+    ctx.strokeStyle = roadStyles[tier].colour;
+    for (let column = Math.floor((middle.x - halfWide) / squareMiles); column <= (middle.x + halfWide) / squareMiles; column++) {
+      for (let row = Math.floor((middle.y - halfTall) / squareMiles); row <= (middle.y + halfTall) / squareMiles; row++) {
+        const paths = map.squares.get(`${column},${row}`);
+        if (paths) ctx.stroke(paths[tier]);
+      }
+    }
+  }
+
+  // Names are written in pixels, so they stay the right way up and the same
+  // size in both views. The whole-territory view leaves out the villages.
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#a9b8c4';
+  for (const place of map.places) {
+    if (wholeTerritory && place.kind === 'village') continue;
+    const x = width / 2 + (place.x - middle.x) * pixelsPerMile;
+    const y = height / 2 - (place.y - middle.y) * pixelsPerMile;
+    if (x < -200 || x > width + 200 || y < -50 || y > height + 50) continue;
+    ctx.font = `${nameSizes[place.kind]}px system-ui, sans-serif`;
+    ctx.fillText(place.name, x, y);
+  }
+  ctx.restore();
+}
+
 /**
  * Paints the storm the way a radar shows it: light rain in green on the
  * outside, through yellow and red, to a purple core.
@@ -98,6 +153,9 @@ function drawStorm(ctx, storm) {
   ];
   ctx.save();
   ctx.globalAlpha = 0.85;
+  // A soft glow, so the storm stands out over the map.
+  ctx.shadowColor = '#6dff8a';
+  ctx.shadowBlur = 40;
   for (const ring of rings) {
     ctx.beginPath();
     ctx.ellipse(storm.x + ring.shift, storm.y + ring.shift, ring.long, ring.wide, Math.PI / 4, 0, Math.PI * 2);

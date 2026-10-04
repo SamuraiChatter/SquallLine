@@ -12,19 +12,21 @@ export const tuning = {
   // How many miles of map fit across the screen. Smaller zooms in.
   viewMiles: 15,
 
-  // How many miles the territory is from one side to the other.
-  // The car cannot drive past its edge.
-  territoryMiles: 60,
+  // How many miles the territory is from west to east, and from south to
+  // north. The car cannot drive past its edge. These match the real map in
+  // data/map.json, so they only change when the map is baked again.
+  territoryMilesWide: 56.5,
+  territoryMilesTall: 62,
 
   storm: {
     // The corners of the storm's path, from where it starts to where it ends.
     // Each is so many miles east (x) and north (y) of the middle of the
     // territory. A minus number means west or south.
     path: [
-      { x: -30, y: -12 },
+      { x: -28, y: -12 },
       { x: -8, y: 0 },
       { x: 10, y: 6 },
-      { x: 30, y: 18 },
+      { x: 28, y: 18 },
     ],
 
     // How fast the storm travels, in miles each second. At 0.22 it crosses
