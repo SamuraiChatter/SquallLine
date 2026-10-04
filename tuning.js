@@ -46,6 +46,24 @@ export const tuning = {
     payAtTornado: 200,
   },
 
+  danger: {
+    // How many miles out from the tornado the danger ring reaches. Inside it
+    // the wind damages the car. Armour will shrink this later.
+    ringMiles: 2.5,
+
+    // How hard the wind hits right at the tornado, as how much of the damage
+    // meter it would fill each second. Bigger hurts more. Further out it is
+    // much gentler: half way to the ring's edge does a quarter of this.
+    windDamageAtTornado: 0.5,
+
+    // Closer to the tornado than this many miles, the car flips.
+    flipMiles: 0.4,
+
+    // What it costs, in dollars, to repair a completely wrecked car. Half
+    // the damage costs half as much.
+    fullRepairCost: 800,
+  },
+
   storm: {
     // The corners of the storm's path, from where it starts to where it ends.
     // Each is so many miles east (x) and north (y) of the middle of the

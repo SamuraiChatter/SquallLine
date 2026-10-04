@@ -4,7 +4,7 @@
 import { tuning } from '../tuning.js';
 import { draw } from './draw.js';
 import { loadMap } from './map.js';
-import { drawMoney, drawPause, drawSummary } from './hud.js';
+import { drawDamage, drawMoney, drawPause, drawSummary } from './hud.js';
 import { headHome, newGame, step, toggleFilming } from './rules.js';
 import { drawWindshield } from './windshield.js';
 
@@ -42,7 +42,7 @@ addEventListener('keydown', (event) => {
   // A key held down repeats; act only on the first press.
   if (key === 'p' && !event.repeat && !state.dayOver) paused = !paused;
   if (key === 'h' && paused) {
-    state = headHome(state);
+    state = headHome(state, tuning);
     paused = false;
   }
   if (paused || state.dayOver) return;
@@ -88,6 +88,7 @@ function frame(now) {
   if (state.filming) drawWindshield(ctx, state);
   else draw(ctx, state, wholeTerritory, map);
   drawMoney(ctx, state);
+  drawDamage(ctx, state);
   if (state.dayOver) drawSummary(ctx, state);
   else if (paused) drawPause(ctx);
   requestAnimationFrame(frame);
