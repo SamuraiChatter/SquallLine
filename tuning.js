@@ -5,6 +5,10 @@ export const tuning = {
   // The name of the game, shown on the browser tab.
   title: 'SquallLine',
 
+  // The studio that made the game, shown on the title screen. Never a real
+  // person's name.
+  studio: 'SamuraiChatter',
+
   // The money in the bank at the start of a new game, in dollars.
   startingBalance: 0,
 

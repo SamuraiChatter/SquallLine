@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildNetwork } from './roads.js';
-import { beginChase, dayTuning, hailCore, headHome, inHailCore, newGame, newRun, nextDay, payPerSecond, step, strongest, toggleFilming, tornadoInFrame, windDamagePerSecond } from './rules.js';
+import { beginChase, dayTuning, freePlay, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, readSave, resume, runFinished, saveOf, step, strongest, toggleFilming, tornadoInFrame, windDamagePerSecond } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
@@ -493,4 +493,78 @@ test('the storm carries the strength of its tornado, and the day that of its str
   assert.equal(state.storm.strength, 1);
   state = step(state, still, 2, two, roads);
   assert.equal(state.storm.strength, 4);
+});
+
+/**
+ * Plays a day to its summary, earning and breaking this much on the way.
+ * @param {import('./rules.js').GameState} state A day's briefing.
+ * @param {number} money
+ * @param {number} [damage]
+ */
+function playDay(state, money, damage = 0) {
+  return headHome({ ...beginChase(state), money, damage }, dayTuning(runTuning, state.day));
+}
+
+test('a new save starts at day one with the starting balance and keeps the best', () => {
+  assert.deepEqual(newSave(runTuning), { day: 1, balance: 50, best: 0 });
+  assert.deepEqual(newSave(runTuning, 900), { day: 1, balance: 50, best: 900 });
+});
+
+test('after a day the save holds the next day and the balance', () => {
+  const ended = playDay(newRun(runTuning, roads, 700), 300);
+  assert.deepEqual(saveOf(ended, runTuning), { day: 2, balance: 350, best: 700 });
+});
+
+test('a save read back resumes at the next briefing with the same balance', () => {
+  const save = saveOf(playDay(newRun(runTuning, roads, 700), 300), runTuning);
+  const back = readSave(JSON.stringify(save), runTuning);
+  assert.deepEqual(back, save);
+  const state = resume(/** @type {import('./rules.js').Save} */ (back), runTuning, roads);
+  assert.equal(state.day, 2);
+  assert.equal(state.briefing, true);
+  assert.equal(state.balance, 350);
+  assert.equal(state.best, 700);
+  assert.equal(state.money, 0);
+});
+
+test('the save after the last day is of a finished run, with the best brought up to date', () => {
+  const ended = playDay({ ...newRun(runTuning, roads, 700), day: 3 }, 1000);
+  const save = saveOf(ended, runTuning);
+  assert.deepEqual(save, { day: 4, balance: 1050, best: 1050 });
+  assert.equal(runFinished(save, runTuning), true);
+  assert.equal(runFinished({ ...save, day: 3 }, runTuning), false);
+  // A lower final balance leaves the best alone.
+  assert.equal(saveOf(playDay({ ...newRun(runTuning, roads, 5000), day: 3 }, 0), runTuning).best, 5000);
+});
+
+test('a missing or damaged save is turned away', () => {
+  assert.equal(readSave(null, runTuning), null);
+  assert.equal(readSave('', runTuning), null);
+  assert.equal(readSave('not a save', runTuning), null);
+  assert.equal(readSave('null', runTuning), null);
+  assert.equal(readSave('{"day":2}', runTuning), null);
+  assert.equal(readSave('{"day":0,"balance":10,"best":0}', runTuning), null);
+  assert.equal(readSave('{"day":1.5,"balance":10,"best":0}', runTuning), null);
+  assert.equal(readSave('{"day":2,"balance":-10,"best":0}', runTuning), null);
+  assert.equal(readSave('{"day":2,"balance":"lots","best":0}', runTuning), null);
+  assert.equal(readSave('{"day":2,"balance":10,"best":null}', runTuning), null);
+});
+
+test('a save from when there were more days counts as a finished run', () => {
+  assert.deepEqual(readSave('{"day":9,"balance":10,"best":20}', runTuning), { day: 4, balance: 10, best: 20 });
+});
+
+test('free play replays any day and leaves the recorded score alone', () => {
+  const save = { day: 4, balance: 1050, best: 2000 };
+  const state = freePlay(save, 2, runTuning, roads);
+  assert.equal(state.day, 2);
+  assert.equal(state.briefing, true);
+  const ended = playDay(state, 400, 0.5);
+  assert.equal(ended.dayOver, true);
+  assert.equal(ended.money, 400);
+  assert.equal(ended.repairBill, 200);
+  assert.equal(ended.balance, 1050);
+  assert.equal(ended.best, 2000);
+  // And it does not lead on to the next day or a second final score.
+  assert.equal(nextDay(ended, runTuning, roads), ended);
 });
