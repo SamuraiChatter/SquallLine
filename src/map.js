@@ -9,8 +9,9 @@ import { buildNetwork } from './roads.js';
 export const squareMiles = 4;
 
 // Roads by importance, most important first. A ramp ("_link") counts with the
-// road it joins.
-const tiers = [['motorway'], ['trunk', 'primary'], ['secondary'], ['tertiary', 'unclassified']];
+// road it joins. The last tier is the rural grid of county roads: the bake
+// script has already left the city streets out of it.
+const tiers = [['motorway'], ['trunk', 'primary'], ['secondary'], ['tertiary', 'unclassified'], ['residential']];
 
 /**
  * @typedef {object} GameMap
