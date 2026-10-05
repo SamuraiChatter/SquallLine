@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildNetwork } from './roads.js';
-import { beginChase, buy, dayTuning, freePlay, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, readSave, resume, runFinished, saveOf, step, strongest, toggleFilming, tornadoInFrame, whyNotBuy, windDamagePerSecond } from './rules.js';
+import { anchorWait, beginChase, buy, dangerRingMiles, dayTuning, freePlay, insideTornado, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, readSave, resume, runFinished, saveOf, step, strongest, toggleAnchor, toggleFilming, tornadoInFrame, whyNotBuy, windDamagePerSecond } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
@@ -13,6 +13,7 @@ const tuning = {
   danger: { ringMiles: 4, windDamageAtTornado: 0.8, flipMiles: 0.5, fullRepairCost: 400 },
   debris: { zoneMiles: 1, strikeEverySeconds: 0.5, damagePerStrike: 0.1 },
   hail: { coreMilesLong: 2, coreMilesWide: 1, damagePerSecond: 0.2 },
+  anchor: { downSeconds: 2, upSeconds: 1 },
 };
 
 // Two roads that cross in the middle of the territory: one from 30 miles west
@@ -383,6 +384,8 @@ const runTuning = {
     { id: 'armour', price: 400, debrisDamageTimes: 0.5, dangerRingTimes: 0.5 },
     { id: 'cage', price: 500, flipDamage: 0.6 },
     { id: 'spoiler', price: 10, needs: 'engine' },
+    { id: 'skirts', price: 600, anchoredRingTimes: 0.5 },
+    { id: 'spikes', price: 700, needs: 'skirts', anchorHolds: true },
   ],
   days: [0, 1, 2].map((strength) => ({
     path: [{ x: 20, y: 20 }, { x: 30, y: 20 }],
@@ -733,4 +736,133 @@ test('a second flip on top of the first wrecks even a car with a roll cage', () 
   const again = step({ ...away, car: { x: 0, y: 0 } }, still, 0.01, day, roads);
   assert.equal(again.wrecked, true);
   assert.equal(again.dayOver, true);
+});
+
+/**
+ * The vehicle parked with its skirts and spikes all the way down, the
+ * tornado still far off.
+ * @param {string[]} parts
+ */
+function anchoredWith(parts) {
+  const far = parked(parts, 20);
+  const state = toggleAnchor(toggleFilming(newGame(far, roads)), far);
+  return step(state, still, 2, far, roads);
+}
+
+/**
+ * A stationary tornado this many miles east of the car, with the wind and
+ * debris switched off so that only flips and footage count.
+ * @param {string[]} parts
+ * @param {number} x
+ */
+function calm(parts, x) {
+  const day = parked(parts, x);
+  return { ...day, danger: { ...day.danger, windDamageAtTornado: 0 }, debris: { ...day.debris, damagePerStrike: 0 } };
+}
+
+test('A does nothing without skirts', () => {
+  const day = parked([], 20);
+  const filming = toggleFilming(newGame(day, roads));
+  assert.equal(toggleAnchor(filming, day), filming);
+});
+
+test('with skirts, A starts anchoring, and it takes its time', () => {
+  const day = parked(['skirts'], 20);
+  let state = toggleAnchor(toggleFilming(newGame(day, roads)), day);
+  assert.equal(state.anchoring, true);
+  assert.equal(state.anchor, 0);
+  assert.equal(anchorWait(state, day), 2);
+  state = step(state, still, 0.5, day, roads);
+  assert.equal(state.anchor, 0.25);
+  assert.equal(anchorWait(state, day), 1.5);
+  state = step(state, still, 1.5, day, roads);
+  assert.equal(state.anchor, 1);
+  assert.equal(anchorWait(state, day), 0);
+  // And it stays down.
+  assert.equal(step(state, still, 5, day, roads).anchor, 1);
+});
+
+test('the vehicle only anchors while parked', () => {
+  const day = parked(['skirts'], 20);
+  const driving = newGame(day, roads);
+  assert.equal(toggleAnchor(driving, day), driving);
+});
+
+test('the car cannot drive off until the skirts and spikes are up', () => {
+  const day = parked(['skirts', 'spikes'], 20);
+  const down = anchoredWith(['skirts', 'spikes']);
+  // Space does nothing while they are down or on their way down.
+  assert.equal(toggleFilming(down), down);
+  const rising = step(toggleAnchor(down, day), still, 0.5, day, roads);
+  assert.equal(rising.anchor, 0.5);
+  assert.equal(anchorWait(rising, day), 0.5);
+  assert.equal(toggleFilming(rising), rising);
+  // Holding an arrow does not move the car either.
+  assert.deepEqual(step(rising, { x: 0, y: 1 }, 0.1, day, roads).car, down.car);
+  const up = step(rising, still, 0.5, day, roads);
+  assert.equal(up.anchor, 0);
+  assert.equal(toggleFilming(up).filming, false);
+});
+
+test('anchored with skirts, the danger ring shrinks and the same wind does less damage', () => {
+  const day = parked(['skirts'], 3);
+  const loose = toggleFilming(newGame(day, roads));
+  const down = anchoredWith(['skirts']);
+  assert.equal(dangerRingMiles(loose, day), 4);
+  assert.equal(dangerRingMiles(down, day), 2);
+  // Three miles from the tornado: inside the plain ring, outside the
+  // anchored one.
+  assert.ok(step(loose, still, 1, day, roads).damage > 0);
+  assert.equal(step(down, still, 1, day, roads).damage, 0);
+  // One mile out both are damaged, the anchored one less.
+  const near = parked(['skirts'], 1);
+  const looseDamage = step(loose, still, 1, near, roads).damage;
+  const downDamage = step(down, still, 1, near, roads).damage;
+  assert.ok(downDamage > 0 && downDamage < looseDamage);
+});
+
+test('a tornado passing over a vehicle that is not anchored flips it', () => {
+  const day = calm(['skirts', 'spikes'], 0.2);
+  const state = step(toggleFilming(newGame(day, roads)), still, 0.01, day, roads);
+  assert.equal(state.wrecked, true);
+});
+
+test('a tornado passing over a vehicle anchored with skirts only flips it', () => {
+  const state = step(anchoredWith(['skirts']), still, 0.01, calm(['skirts'], 0.2), roads);
+  assert.equal(state.wrecked, true);
+});
+
+test('still anchoring when the tornado arrives is not anchored', () => {
+  const far = parked(['skirts', 'spikes'], 20);
+  const half = step(toggleAnchor(toggleFilming(newGame(far, roads)), far), still, 1, far, roads);
+  assert.equal(half.anchor, 0.5);
+  assert.equal(step(half, still, 0.01, calm(['skirts', 'spikes'], 0.2), roads).wrecked, true);
+});
+
+test('anchored with skirts and spikes, the tornado passes over without a flip and pays the top rate', () => {
+  const day = calm(['skirts', 'spikes'], 0.2);
+  // The camera points away from the tornado: there is nothing to aim at.
+  const down = { ...anchoredWith(['skirts', 'spikes']), camera: 270 };
+  assert.equal(insideTornado(down, day), false);
+  const state = step(down, still, 2, day, roads);
+  assert.equal(insideTornado(state, day), true);
+  assert.equal(state.wrecked, false);
+  assert.equal(state.dayOver, false);
+  assert.equal(state.footage, down.footage + 2);
+  assert.equal(state.money, 2 * day.footage.payAtTornado);
+});
+
+test('on the last day only an anchored direct hit earns anything', () => {
+  // Day three's footage ring is the tornado itself.
+  const lastDay = { ...calm(['skirts', 'spikes'], 0.2), footage: dayTuning(runTuning, 3).footage };
+  assert.equal(lastDay.footage.ringMiles, 0);
+  const down = anchoredWith(['skirts', 'spikes']);
+  assert.equal(step(down, still, 1, lastDay, roads).money, lastDay.footage.payAtTornado);
+
+  // Filming it from a mile off, anchored or not, earns nothing.
+  const off = { ...lastDay, storm: calm([], 1).storm };
+  assert.equal(step(down, still, 1, off, roads).money, 0);
+  const loose = toggleFilming(newGame(off, roads));
+  assert.equal(tornadoInFrame(loose, off), true);
+  assert.equal(step(loose, still, 1, off, roads).money, 0);
 });

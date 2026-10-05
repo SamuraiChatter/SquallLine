@@ -61,6 +61,10 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  *   summary and the next day's briefing.
  * @property {boolean} flipped True while the car is lying where the tornado
  *   flipped it. Only a car with a roll cage is still in the day to do so.
+ * @property {number} anchor How far down the skirts and spikes are: 0 is
+ *   up, 1 is anchored.
+ * @property {boolean} anchoring True while the skirts and spikes are going
+ *   down or staying down, false while they are coming up or staying up.
  */
 
 /**
@@ -92,12 +96,14 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {number} [debrisDamageTimes]
  * @property {number} [dangerRingTimes]
  * @property {number} [flipDamage]
+ * @property {number} [anchoredRingTimes]
+ * @property {boolean} [anchorHolds]
  */
 
 /**
  * The numbers a whole run plays by: what the days share, each day's own, and
  * the parts the garage sells.
- * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, days: Day[], parts: Part[] }} RunTuning
+ * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail' | 'anchor'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, days: Day[], parts: Part[] }} RunTuning
  */
 
 /**
@@ -109,8 +115,12 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {RunTuning['danger'] & { flipDamage?: number }} danger With a
  *   roll cage, flipDamage is how much of the damage meter a flip fills
  *   instead of wrecking the car.
+ * @property {RunTuning['anchor'] & { ringTimes?: number, holds?: boolean }} anchor
+ *   With skirts, ringTimes is what anchoring multiplies the danger ring by;
+ *   without it the vehicle cannot anchor. With spikes, holds is true: an
+ *   anchored vehicle stays put when the tornado passes over.
  *
- * @typedef {Omit<RunTuning, 'storm' | 'danger' | 'days' | 'parts' | 'startingBalance'> & DayNumbers} Tuning
+ * @typedef {Omit<RunTuning, 'storm' | 'danger' | 'anchor' | 'days' | 'parts' | 'startingBalance'> & DayNumbers} Tuning
  */
 
 /** @typedef {import('./roads.js').RoadNetwork} RoadNetwork */
@@ -121,7 +131,7 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @param {T} tuning
  * @param {number} day Which day, counting from 1.
  * @param {string[]} [owned] The ids of the parts on the vehicle.
- * @returns {Omit<T, 'danger'> & Tuning}
+ * @returns {Omit<T, 'danger' | 'anchor'> & Tuning}
  */
 export function dayTuning(tuning, day, owned = []) {
   const { path, tornadoes, footage } = tuning.days[day - 1];
@@ -140,6 +150,11 @@ export function dayTuning(tuning, day, owned = []) {
       ...tuning.danger,
       ringMiles: tuning.danger.ringMiles * times('dangerRingTimes'),
       flipDamage: parts.find((part) => part.flipDamage !== undefined)?.flipDamage,
+    },
+    anchor: {
+      ...tuning.anchor,
+      ringTimes: parts.find((part) => part.anchoredRingTimes !== undefined)?.anchoredRingTimes,
+      holds: parts.some((part) => part.anchorHolds),
     },
     debris: { ...tuning.debris, damagePerStrike: tuning.debris.damagePerStrike * times('debrisDamageTimes') },
     hail: { ...tuning.hail, damagePerSecond: tuning.hail.damagePerSecond * times('hailDamageTimes') },
@@ -355,6 +370,8 @@ export function newGame(tuning, roads) {
     parts: [],
     garage: false,
     flipped: false,
+    anchor: 0,
+    anchoring: false,
   };
 }
 
@@ -403,12 +420,66 @@ export function milesToFunnel(state) {
 
 /**
  * Pulls the car over to film, or goes back to driving. The camera starts out
- * pointed at the tornado.
+ * pointed at the tornado. The car cannot drive off until the skirts and
+ * spikes are all the way up.
  * @param {GameState} state
  * @returns {GameState}
  */
 export function toggleFilming(state) {
+  if (state.anchoring || state.anchor > 0) return state;
   return { ...state, filming: !state.filming, camera: bearingToFunnel(state), road: { ...state.road, moving: false } };
+}
+
+/**
+ * Starts dropping the skirts and driving in the spikes, or starts pulling
+ * them up again. Only a parked vehicle with skirts can anchor.
+ * @param {GameState} state
+ * @param {Tuning} tuning
+ * @returns {GameState}
+ */
+export function toggleAnchor(state, tuning) {
+  if (!state.filming || state.dayOver || tuning.anchor.ringTimes === undefined) return state;
+  return { ...state, anchoring: !state.anchoring };
+}
+
+/**
+ * How many more seconds the skirts and spikes need to finish going down or
+ * coming up. Nothing once they are there.
+ * @param {GameState} state
+ * @param {Tuning} tuning
+ */
+export function anchorWait(state, tuning) {
+  return state.anchoring ? (1 - state.anchor) * tuning.anchor.downSeconds : state.anchor * tuning.anchor.upSeconds;
+}
+
+/**
+ * How many miles out the danger ring reaches right now. Anchoring with the
+ * skirts down pulls it in.
+ * @param {GameState} state
+ * @param {Tuning} tuning
+ */
+export function dangerRingMiles(state, tuning) {
+  return tuning.danger.ringMiles * (state.anchor >= 1 ? (tuning.anchor.ringTimes ?? 1) : 1);
+}
+
+/**
+ * Whether the tornado is right on top of the car: close enough to flip one
+ * that is not held down.
+ * @param {GameState} state
+ * @param {Tuning} tuning
+ */
+function tornadoOverhead(state, tuning) {
+  return state.storm.tornado > 0 && milesToFunnel(state) <= tuning.danger.flipMiles;
+}
+
+/**
+ * Whether this is the direct hit: the tornado passing over a vehicle that is
+ * anchored and spiked to the ground.
+ * @param {GameState} state
+ * @param {Tuning} tuning
+ */
+export function insideTornado(state, tuning) {
+  return state.anchor >= 1 && tuning.anchor.holds === true && tornadoOverhead(state, tuning);
 }
 
 /**
@@ -480,8 +551,9 @@ function battered(state, dt, tuning) {
 
   if (state.storm.tornado > 0) {
     const miles = milesToFunnel(state);
-    damage += windDamagePerSecond(miles, tuning) * dt;
-    flipped = miles <= tuning.danger.flipMiles;
+    damage += windDamagePerSecond(miles, tuning, dangerRingMiles(state, tuning)) * dt;
+    // Spiked to the ground, the car stays put as the tornado passes over.
+    flipped = tornadoOverhead(state, tuning) && !insideTornado(state, tuning);
     if (flipped && !state.flipped) {
       const { flipDamage } = tuning.danger;
       if (flipDamage === undefined) wrecked = true;
@@ -555,11 +627,12 @@ export function inHailCore(point, storm, tuning) {
  * climbs steeply, so half way in does a quarter of the damage at the tornado.
  * @param {number} miles
  * @param {Tuning} tuning
+ * @param {number} [ringMiles] How far the danger ring reaches, if anchoring
+ *   has pulled it in.
  */
-export function windDamagePerSecond(miles, tuning) {
-  const { ringMiles, windDamageAtTornado } = tuning.danger;
+export function windDamagePerSecond(miles, tuning, ringMiles = tuning.danger.ringMiles) {
   if (miles >= ringMiles) return 0;
-  return windDamageAtTornado * (1 - miles / ringMiles) ** 2;
+  return tuning.danger.windDamageAtTornado * (1 - miles / ringMiles) ** 2;
 }
 
 /**
@@ -577,13 +650,17 @@ function driveOrFilm(state, steering, dt, tuning, roads) {
     // Pulled over: the car stays put, left and right pan the camera, and the
     // seconds count, and pay, while the tornado is in the viewfinder box.
     const camera = (state.camera + steering.x * tuning.camera.panDegreesPerSecond * dt + 360) % 360;
-    const next = { ...state, storm, camera };
-    const filmed = tornadoInFrame(next, tuning) ? dt : 0;
-    return {
-      ...next,
-      footage: state.footage + filmed,
-      money: state.money + filmed * payPerSecond(milesToFunnel(next), tuning),
-    };
+    // The skirts and spikes take their time going down and coming up.
+    const { downSeconds, upSeconds } = tuning.anchor;
+    const moved = state.anchoring ? dt / Math.max(downSeconds, 0.001) : -dt / Math.max(upSeconds, 0.001);
+    const anchor = Math.max(0, Math.min(1, state.anchor + moved));
+    const next = { ...state, storm, camera, anchor };
+    // Inside the tornado there is nothing to aim at: the footage counts by
+    // itself, at the top rate.
+    const direct = insideTornado(next, tuning);
+    const filmed = direct || tornadoInFrame(next, tuning) ? dt : 0;
+    const pay = direct ? tuning.footage.payAtTornado : payPerSecond(milesToFunnel(next), tuning);
+    return { ...next, footage: state.footage + filmed, money: state.money + filmed * pay };
   }
 
   const road = drive(roads, state.road, steering, tuning.carMilesPerSecond * dt);

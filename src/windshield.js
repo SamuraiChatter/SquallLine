@@ -5,7 +5,7 @@
 // is written on the placeholder so it is easy to see which drawing goes where.
 
 import { tuning } from '../tuning.js';
-import { cameraOffFunnel, inDebrisZone, inHailCore, milesToFunnel, payPerSecond, tornadoInFrame } from './rules.js';
+import { anchorWait, cameraOffFunnel, inDebrisZone, inHailCore, insideTornado, milesToFunnel, payPerSecond, tornadoInFrame } from './rules.js';
 
 /**
  * Writes a placeholder's file name on it.
@@ -77,6 +77,20 @@ export function drawWindshield(ctx, state, day) {
   // keeps its own track, worked out from its number and the clock.
   const seconds = performance.now() / 1000;
 
+  // art/inside-tornado.png: the direct hit. The tornado is all around, so
+  // its wall fills the view and whirls past.
+  const direct = insideTornado(state, day);
+  if (direct) {
+    ctx.fillStyle = '#14181d';
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#262d35';
+    for (let i = 0; i < 9; i++) {
+      const across = (seconds * 0.9 + i / 9) % 1;
+      ctx.fillRect(across * width * 1.2 - width * 0.2, 0, width * 0.06, height);
+    }
+    label(ctx, 'art/inside-tornado.png', width * 0.05, height * 0.13);
+  }
+
   // art/debris.png: debris flies across the scene while it is hitting the car.
   if (inDebrisZone(state, day)) {
     ctx.fillStyle = '#6b4a2b';
@@ -104,6 +118,14 @@ export function drawWindshield(ctx, state, day) {
     label(ctx, 'art/hail.png', width * 0.05, height * 0.27);
   }
 
+  // art/skirts.png: the skirts come down over the bottom of the windows as
+  // the vehicle anchors.
+  if (state.anchor > 0) {
+    ctx.fillStyle = '#39424c';
+    ctx.fillRect(0, height * (0.86 - 0.08 * state.anchor), width, height * 0.08 * state.anchor);
+    label(ctx, 'art/skirts.png', width * 0.8, height * (0.86 - 0.08 * state.anchor) + 6);
+  }
+
   // art/dashboard.png: the dashboard along the bottom and a pillar each side.
   ctx.fillStyle = '#0d0f12';
   ctx.fillRect(0, height * 0.86, width, height * 0.14);
@@ -112,11 +134,14 @@ export function drawWindshield(ctx, state, day) {
   label(ctx, 'art/dashboard.png', width * 0.05, height * 0.9);
 
   // The viewfinder box: red while the tornado is inside it and being filmed.
-  const filming = tornadoInFrame(state, day);
-  const boxWide = (day.camera.viewfinderDegrees / tuning.camera.viewDegrees) * width;
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = filming ? '#ff4d4d' : '#dce6ee';
-  ctx.strokeRect((width - boxWide) / 2, height * 0.12, boxWide, height * 0.62);
+  // Inside the tornado there is nothing to aim at, and no box.
+  const filming = direct || tornadoInFrame(state, day);
+  if (!direct) {
+    const boxWide = (day.camera.viewfinderDegrees / tuning.camera.viewDegrees) * width;
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = filming ? '#ff4d4d' : '#dce6ee';
+    ctx.strokeRect((width - boxWide) / 2, height * 0.12, boxWide, height * 0.62);
+  }
 
   // The counter of seconds filmed.
   ctx.fillStyle = filming ? '#ff4d4d' : '#dce6ee';
@@ -125,10 +150,24 @@ export function drawWindshield(ctx, state, day) {
   ctx.textBaseline = 'top';
   ctx.fillText(`${filming ? '● REC' : 'REC'}  ${state.footage.toFixed(1)} s`, width * 0.95, height * 0.035);
 
-  // In the box but outside the footage ring: say why it is not paying.
-  if (filming && payPerSecond(milesToFunnel(state), day) === 0) {
-    ctx.font = '40px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Too far away to sell. Get inside the footage ring.', width / 2, height * 0.76);
+  ctx.font = '40px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  if (direct) {
+    ctx.fillText('DIRECT HIT! Filming from inside the tornado.', width / 2, height * 0.5);
+  } else if (filming && payPerSecond(milesToFunnel(state), day) === 0) {
+    // In the box but outside the footage ring: say why it is not paying.
+    const words = day.footage.ringMiles > 0 ? 'Too far away to sell. Get inside the footage ring.' : 'Too far away to sell. Only a direct hit pays today.';
+    ctx.fillText(words, width / 2, height * 0.76);
+  }
+
+  // What the skirts and spikes are doing, for a vehicle that has them.
+  if (day.anchor.ringTimes !== undefined) {
+    const wait = anchorWait(state, day).toFixed(1);
+    let words = 'A: anchor';
+    if (state.anchoring) words = state.anchor < 1 ? `Anchoring… ${wait} s` : 'ANCHORED.  A: pull up';
+    else if (state.anchor > 0) words = `Pulling up… ${wait} s`;
+    ctx.fillStyle = state.anchor >= 1 ? '#9be28c' : '#dce6ee';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(words, width / 2, height * 0.93);
   }
 }

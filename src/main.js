@@ -6,7 +6,7 @@ import { draw } from './draw.js';
 import { drawGarage } from './garage.js';
 import { loadMap } from './map.js';
 import { drawAbout, drawBriefing, drawDamage, drawDayChoice, drawFinalScore, drawMoney, drawNewGameCheck, drawPause, drawSummary, drawTitle, drawTrialNote } from './hud.js';
-import { beginChase, buy, dayTuning, freePlay, headHome, newRun, newSave, nextDay, readSave, resume, runFinished, saveKey, saveOf, step, strongest, toggleFilming } from './rules.js';
+import { beginChase, buy, dayTuning, toggleAnchor, freePlay, headHome, newRun, newSave, nextDay, readSave, resume, runFinished, saveKey, saveOf, step, strongest, toggleFilming } from './rules.js';
 import { designKey, readStorm } from './storms.js';
 import { drawWindshield } from './windshield.js';
 
@@ -183,6 +183,8 @@ addEventListener('keydown', (event) => {
   if (paused || state.briefing || state.dayOver) return;
 
   if (key === 'z' && !event.repeat && !state.filming) wholeTerritory = !wholeTerritory;
+  // A drops the skirts and spikes while parked, and A again pulls them up.
+  if (key === 'a' && !event.repeat) state = toggleAnchor(state, game);
   // Space pulls over to film, and Space again drives on.
   if (event.key === ' ') {
     if (!event.repeat) {
