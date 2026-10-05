@@ -31,7 +31,7 @@ GitHub Pages publishes `main` at https://samuraichatter.github.io/SquallLine/.
   the rules, it never touches the canvas or the page, and has its own tests.
 - `src/draw.js` paints the map view, `src/windshield.js` the filming view, and
   `src/hud.js` the money, damage meter, pause screen and day summary over
-  both.
+  both, and the title screen, briefing and final score around them.
   `src/map.js` loads the real map. `src/main.js` starts the game.
 - `design.html` and `src/design.js` are the design mode, where the creative
   lead draws storms on the map. Players are not shown it: nothing in the game

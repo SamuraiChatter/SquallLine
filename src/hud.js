@@ -1,5 +1,6 @@
 // What is written over both views: the money earned, the damage meter, the
-// pause screen and the end-of-day summary.
+// pause screen and the end-of-day summary. Also the screens around the game:
+// the title screen, the briefing and the final score.
 
 import { tuning } from '../tuning.js';
 import { inDebrisZone, inHailCore, milesToFunnel, strongest } from './rules.js';
@@ -112,6 +113,52 @@ export function drawPause(ctx) {
 }
 
 /**
+ * Paints the title screen.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {import('./rules.js').Save} save
+ * @param {number} days How many days there are.
+ * @param {boolean} canSave False when the browser will not keep progress.
+ */
+export function drawTitle(ctx, save, days, canSave) {
+  const finished = save.day > days;
+  drawScreen(ctx, [
+    tuning.title,
+    `by ${tuning.studio}`,
+    ...(finished ? [`F: free play (final score ${dollars(save.balance)})`] : []),
+    ...(!finished && save.day > 1 ? [`C: continue (day ${save.day}, ${dollars(save.balance)})`] : []),
+    'N: new game',
+    'A: about',
+    ...(save.best > 0 ? [`Best final score: ${dollars(save.best)}`] : []),
+    ...(canSave ? [] : ['Progress will not be saved in this window.']),
+  ]);
+}
+
+/**
+ * Paints the about screen, with the credits.
+ * @param {CanvasRenderingContext2D} ctx
+ */
+export function drawAbout(ctx) {
+  drawScreen(ctx, ['About', `${tuning.title} is made by ${tuning.studio}.`, 'Map data © OpenStreetMap contributors.', 'The link is in the corner of the page.', 'Enter: back']);
+}
+
+/**
+ * Asks before a new game wipes the run.
+ * @param {CanvasRenderingContext2D} ctx
+ */
+export function drawNewGameCheck(ctx) {
+  drawScreen(ctx, ['New game?', 'This run will be wiped.', 'The best final score is kept.', 'Y: start again', 'N: go back']);
+}
+
+/**
+ * Asks which day to replay in free play.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} days How many days there are.
+ */
+export function drawDayChoice(ctx, days) {
+  drawScreen(ctx, ['Free play', `Press 1 to ${days} to pick a day.`, 'Free play never changes the final score.', 'Enter: back']);
+}
+
+/**
  * Paints the forecast briefing before a chase.
  * @param {CanvasRenderingContext2D} ctx
  * @param {import('./rules.js').GameState} state
@@ -121,7 +168,7 @@ export function drawPause(ctx) {
 export function drawBriefing(ctx, state, day, days) {
   const { ringMiles } = day.footage;
   drawScreen(ctx, [
-    `Day ${state.day} of ${days}`,
+    state.freePlay ? `Free play: day ${state.day}` : `Day ${state.day} of ${days}`,
     `Forecast: tornadoes up to EF${strongest(day.storm.tornadoes)}`,
     ringMiles > 0 ? `Footage ring: ${ringMiles} ${ringMiles === 1 ? 'mile' : 'miles'}` : 'Footage ring: the tornado itself',
     'Enter: start the chase',
@@ -134,7 +181,7 @@ export function drawBriefing(ctx, state, day, days) {
  * @param {import('./rules.js').GameState} state
  */
 export function drawFinalScore(ctx, state) {
-  drawScreen(ctx, ['Final score', dollars(state.balance), `Best so far: ${dollars(state.best)}`, 'Enter: play again']);
+  drawScreen(ctx, ['Final score', dollars(state.balance), `Best so far: ${dollars(state.best)}`, 'Enter: back to the title screen']);
 }
 
 /**
@@ -151,7 +198,8 @@ export function drawSummary(ctx, state, trial) {
     ...(state.wrecked ? ['The crew walked away safe. The car was towed home.'] : []),
     `Footage sold to ${tuning.tvStation}: ${dollars(state.money)}`,
     ...(state.repairBill > 0 ? [`Repair bill: ${dollars(state.repairBill)}`] : []),
-    `Balance: ${dollars(state.balance)}`,
-    trial ? 'Enter: try the storm again' : 'Enter: carry on',
+    // Free play leaves the balance, which is the final score, alone.
+    state.freePlay ? `Free play: the final score stays ${dollars(state.balance)}` : `Balance: ${dollars(state.balance)}`,
+    trial ? 'Enter: try the storm again' : state.freePlay ? 'Enter: back to the title screen' : 'Enter: carry on',
   ]);
 }

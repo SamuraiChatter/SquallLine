@@ -54,6 +54,8 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {boolean} finished True once the last day is over and the final
  *   score is showing.
  * @property {number} best The best final balance of any finished run.
+ * @property {boolean} freePlay True while replaying a day after a finished
+ *   run. Free play never changes the balance, which is the recorded score.
  */
 
 /**
@@ -106,6 +108,87 @@ export function strongest(tornadoes) {
 }
 
 /**
+ * What is kept between visits.
+ * @typedef {object} Save
+ * @property {number} day The next day to play, counting from 1. One more
+ *   than the last day means the run is finished.
+ * @property {number} balance The money in the bank. Once the run is
+ *   finished, this is its final score.
+ * @property {number} best The best final balance of any finished run.
+ */
+
+// Where the browser keeps the save.
+export const saveKey = 'squallline-save';
+
+/**
+ * The save of a game not yet started. Starting a new game keeps the best
+ * final balance.
+ * @param {RunTuning} tuning
+ * @param {number} [best]
+ * @returns {Save}
+ */
+export function newSave(tuning, best = 0) {
+  return { day: 1, balance: tuning.startingBalance, best };
+}
+
+/**
+ * What to keep once a day is over: the next day, the balance, and the best
+ * final balance, which the last day's balance may have beaten.
+ * @param {GameState} state A day that has ended.
+ * @param {RunTuning} tuning
+ * @returns {Save}
+ */
+export function saveOf(state, tuning) {
+  const finished = state.day >= tuning.days.length;
+  return { day: state.day + 1, balance: state.balance, best: finished ? Math.max(state.best, state.balance) : state.best };
+}
+
+/**
+ * Whether a save is of a finished run.
+ * @param {Save} save
+ * @param {RunTuning} tuning
+ */
+export function runFinished(save, tuning) {
+  return save.day > tuning.days.length;
+}
+
+/**
+ * Reads a save. Anything that is not a save the game can carry on from is
+ * turned away, so a damaged one cannot break the game.
+ * @param {string | null} text
+ * @param {RunTuning} tuning
+ * @returns {Save | null}
+ */
+export function readSave(text, tuning) {
+  /** @type {unknown} */
+  let kept;
+  try {
+    kept = JSON.parse(text ?? '');
+  } catch {
+    return null;
+  }
+  const { day, balance, best } = /** @type {Partial<Save>} */ (kept ?? {});
+  /** @param {unknown} n */
+  const isMoney = (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+  if (typeof day !== 'number' || !Number.isInteger(day) || day < 1 || !isMoney(balance) || !isMoney(best)) return null;
+  // The tuning file may have fewer days now than when the save was made.
+  return { day: Math.min(day, tuning.days.length + 1), balance: /** @type {number} */ (balance), best: /** @type {number} */ (best) };
+}
+
+/**
+ * A day's briefing.
+ * @param {RunTuning} tuning
+ * @param {RoadNetwork} roads
+ * @param {number} day
+ * @param {number} balance
+ * @param {number} best
+ * @returns {GameState}
+ */
+function briefingFor(tuning, roads, day, balance, best) {
+  return { ...newGame(dayTuning(tuning, day), roads), day, briefing: true, balance, best };
+}
+
+/**
  * Starts a run of chase days, at day one's briefing.
  * @param {RunTuning} tuning
  * @param {RoadNetwork} roads
@@ -113,7 +196,30 @@ export function strongest(tornadoes) {
  * @returns {GameState}
  */
 export function newRun(tuning, roads, best = 0) {
-  return { ...newGame(dayTuning(tuning, 1), roads), briefing: true, balance: tuning.startingBalance, best };
+  return resume(newSave(tuning, best), tuning, roads);
+}
+
+/**
+ * Carries a run on from its save, at the next day's briefing.
+ * @param {Save} save The save of a run that is not finished.
+ * @param {RunTuning} tuning
+ * @param {RoadNetwork} roads
+ * @returns {GameState}
+ */
+export function resume(save, tuning, roads) {
+  return briefingFor(tuning, roads, save.day, save.balance, save.best);
+}
+
+/**
+ * Replays a day after a finished run, at its briefing.
+ * @param {Save} save The save of the finished run.
+ * @param {number} day Which day, counting from 1.
+ * @param {RunTuning} tuning
+ * @param {RoadNetwork} roads
+ * @returns {GameState}
+ */
+export function freePlay(save, day, tuning, roads) {
+  return { ...briefingFor(tuning, roads, day, save.balance, save.best), freePlay: true };
 }
 
 /**
@@ -135,11 +241,10 @@ export function beginChase(state) {
  * @returns {GameState}
  */
 export function nextDay(state, tuning, roads) {
-  if (!state.dayOver || state.finished) return state;
+  if (!state.dayOver || state.finished || state.freePlay) return state;
   // The final score is the balance once the last day's repairs are paid.
   if (state.day >= tuning.days.length) return { ...state, finished: true, best: Math.max(state.best, state.balance) };
-  const day = state.day + 1;
-  return { ...newGame(dayTuning(tuning, day), roads), day, briefing: true, balance: state.balance, best: state.best };
+  return briefingFor(tuning, roads, state.day + 1, state.balance, state.best);
 }
 
 /**
@@ -169,6 +274,7 @@ export function newGame(tuning, roads) {
     briefing: false,
     finished: false,
     best: 0,
+    freePlay: false,
   };
 }
 
@@ -177,7 +283,8 @@ export const headHome = endDay;
 
 /**
  * Ends the day. The TV station buys the footage, the repair bill comes out,
- * and what is left joins the balance, which never goes below zero.
+ * and what is left joins the balance, which never goes below zero. In free
+ * play the balance is left alone.
  * @param {GameState} state
  * @param {Tuning} tuning
  * @returns {GameState}
@@ -189,7 +296,7 @@ function endDay(state, tuning) {
     ...state,
     dayOver: true,
     repairBill,
-    balance: Math.max(0, state.balance + state.money - repairBill),
+    balance: state.freePlay ? state.balance : Math.max(0, state.balance + state.money - repairBill),
   };
 }
 
