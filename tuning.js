@@ -210,6 +210,13 @@ export const tuning = {
     },
   ],
 
+  anchor: {
+    // How many seconds the skirts and spikes take to go down, and to come
+    // back up. The car cannot drive until they are up.
+    downSeconds: 2,
+    upSeconds: 2,
+  },
+
   // The chase team and its vehicle. Their names show in the garage.
   team: 'Team SquallLine',
   vehicle: 'The Chaser',
@@ -236,6 +243,10 @@ export const tuning = {
   // dangerRingTimes: how big the danger ring is.
   // flipDamage: with this, a flip fills this much of the damage meter
   //   instead of ending the day. 0.5 is half the meter.
+  // anchoredRingTimes: with this the vehicle can anchor (A, while parked),
+  //   and this is how big the danger ring is while it is anchored.
+  // anchorHolds: with this, an anchored vehicle stays put when the tornado
+  //   passes right over it, and films from inside.
   parts: [
     {
       id: 'lexan',
@@ -287,6 +298,26 @@ export const tuning = {
       picture: 'art/part-rollcage.png',
       at: { x: 0.15, y: 0.3 },
       flipDamage: 0.5,
+    },
+    {
+      id: 'skirts',
+      name: 'Drop skirts',
+      price: 6000,
+      does: 'Press A while parked to anchor. The danger ring shrinks a lot.',
+      needs: '',
+      picture: 'art/part-skirts.png',
+      at: { x: 0.45, y: 0.9 },
+      anchoredRingTimes: 0.15,
+    },
+    {
+      id: 'spikes',
+      name: 'Anchor spikes',
+      price: 8000,
+      does: 'Anchored, the tornado can pass right over. Film from inside!',
+      needs: 'skirts',
+      picture: 'art/part-spikes.png',
+      at: { x: 0.8, y: 0.9 },
+      anchorHolds: true,
     },
   ],
 

@@ -3,7 +3,7 @@
 
 import { tuning } from '../tuning.js';
 import { squareMiles } from './map.js';
-import { hailCore } from './rules.js';
+import { dangerRingMiles, hailCore } from './rules.js';
 
 /**
  * Paints the game as it is right now.
@@ -59,7 +59,7 @@ export function draw(ctx, state, wholeTerritory, map, day) {
 
     // The danger ring: inside it the wind damages the car.
     ctx.beginPath();
-    ctx.arc(storm.funnel.x, storm.funnel.y, day.danger.ringMiles, 0, Math.PI * 2);
+    ctx.arc(storm.funnel.x, storm.funnel.y, dangerRingMiles(state, day), 0, Math.PI * 2);
     ctx.lineWidth = 4 / pixelsPerMile;
     ctx.strokeStyle = '#ff4d4d';
     ctx.stroke();

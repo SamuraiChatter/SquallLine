@@ -3,7 +3,7 @@
 // the title screen, the briefing and the final score.
 
 import { tuning } from '../tuning.js';
-import { inDebrisZone, inHailCore, milesToFunnel, strongest } from './rules.js';
+import { dangerRingMiles, inDebrisZone, inHailCore, milesToFunnel, strongest } from './rules.js';
 
 /** @param {number} amount */
 const dollars = (amount) => `$${Math.round(amount).toLocaleString('en-US')}`;
@@ -76,7 +76,7 @@ export function drawDamage(ctx, state, struck, day) {
   const tornado = state.storm.tornado > 0;
   let warning = '';
   if (inHailCore(state.car, state.storm, day)) warning = 'HAIL! It is damaging the car.';
-  if (tornado && miles < day.danger.ringMiles) warning = 'TOO CLOSE! The wind is damaging the car.';
+  if (tornado && miles < dangerRingMiles(state, day)) warning = 'TOO CLOSE! The wind is damaging the car.';
   if (inDebrisZone(state, day)) warning = 'DEBRIS! Get out of here.';
   if (warning) {
     ctx.fillStyle = '#ff4d4d';
