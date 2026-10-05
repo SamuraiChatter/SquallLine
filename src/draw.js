@@ -12,8 +12,9 @@ import { hailCore } from './rules.js';
  * @param {boolean} wholeTerritory True to show the whole territory, false to
  *   follow the car.
  * @param {import('./map.js').GameMap} map
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
  */
-export function draw(ctx, state, wholeTerritory, map) {
+export function draw(ctx, state, wholeTerritory, map, day) {
   const { width, height } = ctx.canvas;
   const { car, storm } = state;
   const halfWide = tuning.territoryMilesWide / 2;
@@ -41,28 +42,31 @@ export function draw(ctx, state, wholeTerritory, map) {
   ctx.strokeStyle = '#5b7488';
   ctx.strokeRect(-halfWide, -halfTall, halfWide * 2, halfTall * 2);
 
-  drawStorm(ctx, storm);
+  drawStorm(ctx, storm, day);
 
-  // The footage ring: film from inside it to get paid.
   if (storm.tornado > 0) {
-    ctx.beginPath();
-    ctx.arc(storm.funnel.x, storm.funnel.y, tuning.footage.ringMiles, 0, Math.PI * 2);
-    ctx.lineWidth = 3 / pixelsPerMile;
-    ctx.setLineDash([14 / pixelsPerMile, 10 / pixelsPerMile]);
-    ctx.strokeStyle = '#9be28c';
-    ctx.stroke();
-    ctx.setLineDash([]);
+    // The footage ring: film from inside it to get paid. A ring of no miles
+    // is the tornado itself, so there is nothing to draw.
+    if (day.footage.ringMiles > 0) {
+      ctx.beginPath();
+      ctx.arc(storm.funnel.x, storm.funnel.y, day.footage.ringMiles, 0, Math.PI * 2);
+      ctx.lineWidth = 3 / pixelsPerMile;
+      ctx.setLineDash([14 / pixelsPerMile, 10 / pixelsPerMile]);
+      ctx.strokeStyle = '#9be28c';
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     // The danger ring: inside it the wind damages the car.
     ctx.beginPath();
-    ctx.arc(storm.funnel.x, storm.funnel.y, tuning.danger.ringMiles, 0, Math.PI * 2);
+    ctx.arc(storm.funnel.x, storm.funnel.y, day.danger.ringMiles, 0, Math.PI * 2);
     ctx.lineWidth = 4 / pixelsPerMile;
     ctx.strokeStyle = '#ff4d4d';
     ctx.stroke();
 
     // The debris zone: inside it flying debris hits the car.
     ctx.beginPath();
-    ctx.arc(storm.funnel.x, storm.funnel.y, tuning.debris.zoneMiles, 0, Math.PI * 2);
+    ctx.arc(storm.funnel.x, storm.funnel.y, day.debris.zoneMiles, 0, Math.PI * 2);
     ctx.lineWidth = 4 / pixelsPerMile;
     ctx.setLineDash([5 / pixelsPerMile, 7 / pixelsPerMile]);
     ctx.strokeStyle = '#c98a4b';
@@ -171,8 +175,9 @@ export function drawMap(ctx, map, wholeTerritory, middle, pixelsPerMile) {
  * outside, through yellow and red, to a purple core.
  * @param {CanvasRenderingContext2D} ctx
  * @param {import('./rules.js').Storm} storm
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
  */
-function drawStorm(ctx, storm) {
+function drawStorm(ctx, storm, day) {
   // Each ring: its colour, how far it stretches, and how far its middle sits
   // to the north-east of the storm's own middle. All in miles.
   const rings = [
@@ -193,7 +198,7 @@ function drawStorm(ctx, storm) {
   }
   // The purple core is the hail zone, so it is drawn exactly where the rules
   // say hail falls.
-  const core = hailCore(storm, tuning);
+  const core = hailCore(storm, day);
   ctx.beginPath();
   ctx.ellipse(core.x, core.y, core.long, core.wide, Math.PI / 4, 0, Math.PI * 2);
   ctx.fillStyle = '#b03be0';
@@ -213,8 +218,10 @@ function drawStorm(ctx, storm) {
   ctx.restore();
 
   // The tornado marker sits inside the hook: a white triangle, point down.
+  // A stronger tornado has a bigger one, and it shrinks as the tornado dies.
   if (storm.tornado > 0) {
-    const size = 0.4 + 0.8 * storm.tornado;
+    const { mapMiles } = tuning.tornado;
+    const size = mapMiles[Math.min(storm.strength, mapMiles.length - 1)] * (0.33 + 0.67 * storm.tornado);
     ctx.beginPath();
     ctx.moveTo(hookX, hookY - size);
     ctx.lineTo(hookX - size, hookY + size);

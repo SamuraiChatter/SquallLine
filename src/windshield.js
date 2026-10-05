@@ -22,12 +22,22 @@ function label(ctx, fileName, x, y) {
   ctx.fillText(fileName, x, y);
 }
 
+// The tornado's shape, weakest first: a rope for EF0 and EF1, a cone for EF2
+// and EF3, a wedge for EF4 and EF5. Each has its own picture file, and is so
+// wide at the cloud and at the ground, as a share of how tall it is.
+const shapes = [
+  { fileName: 'art/tornado-rope.png', top: 0.09, foot: 0.03 },
+  { fileName: 'art/tornado-cone.png', top: 0.3, foot: 0.05 },
+  { fileName: 'art/tornado-wedge.png', top: 0.55, foot: 0.3 },
+];
+
 /**
  * Paints the windshield view.
  * @param {CanvasRenderingContext2D} ctx
  * @param {import('./rules.js').GameState} state
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
  */
-export function drawWindshield(ctx, state) {
+export function drawWindshield(ctx, state, day) {
   const { width, height } = ctx.canvas;
   const horizon = height * 0.62;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -42,8 +52,8 @@ export function drawWindshield(ctx, state) {
   ctx.fillRect(0, horizon, width, height - horizon);
   label(ctx, 'art/ground.png', width * 0.05, horizon + 12);
 
-  // art/tornado.png. How far left or right it sits follows its direction
-  // from the car, and its size follows how near it is.
+  // The tornado. How far left or right it sits follows its direction from
+  // the car, its size follows how near it is, and its shape its strength.
   const { storm } = state;
   if (storm.tornado > 0) {
     const x = width / 2 + (cameraOffFunnel(state) / tuning.camera.viewDegrees) * width;
@@ -51,15 +61,16 @@ export function drawWindshield(ctx, state) {
     // Twice as near looks twice as tall, up to filling the sky.
     const tall = Math.min(horizon * 1.1, (horizon * 1.6) / Math.max(miles, 0.5)) * (0.4 + 0.6 * storm.tornado);
     const top = horizon - tall;
+    const shape = shapes[Math.min(shapes.length - 1, Math.floor(storm.strength / 2))];
     ctx.beginPath();
-    ctx.moveTo(x - tall * 0.3, top);
-    ctx.lineTo(x + tall * 0.3, top);
-    ctx.lineTo(x + tall * 0.05, horizon);
-    ctx.lineTo(x - tall * 0.05, horizon);
+    ctx.moveTo(x - tall * shape.top, top);
+    ctx.lineTo(x + tall * shape.top, top);
+    ctx.lineTo(x + tall * shape.foot, horizon);
+    ctx.lineTo(x - tall * shape.foot, horizon);
     ctx.closePath();
     ctx.fillStyle = '#1b2026';
     ctx.fill();
-    label(ctx, 'art/tornado.png', x + tall * 0.32, top);
+    label(ctx, shape.fileName, x + tall * (shape.top + 0.02), top);
   }
 
   // The weather between the car and the tornado. Each bit of debris or hail
@@ -67,7 +78,7 @@ export function drawWindshield(ctx, state) {
   const seconds = performance.now() / 1000;
 
   // art/debris.png: debris flies across the scene while it is hitting the car.
-  if (inDebrisZone(state, tuning)) {
+  if (inDebrisZone(state, day)) {
     ctx.fillStyle = '#6b4a2b';
     for (let i = 0; i < 24; i++) {
       const across = (seconds * (0.9 + (i % 5) * 0.25) + i * 0.137) % 1;
@@ -79,7 +90,7 @@ export function drawWindshield(ctx, state) {
   }
 
   // art/hail.png: hail falls, and bounces off the ground, inside the core.
-  if (inHailCore(state.car, storm, tuning)) {
+  if (inHailCore(state.car, storm, day)) {
     ctx.fillStyle = '#eef4f8';
     for (let i = 0; i < 60; i++) {
       const fall = (seconds * (1.6 + (i % 3) * 0.4) + i * 0.071) % 1.25;
@@ -101,8 +112,8 @@ export function drawWindshield(ctx, state) {
   label(ctx, 'art/dashboard.png', width * 0.05, height * 0.9);
 
   // The viewfinder box: red while the tornado is inside it and being filmed.
-  const filming = tornadoInFrame(state, tuning);
-  const boxWide = (tuning.camera.viewfinderDegrees / tuning.camera.viewDegrees) * width;
+  const filming = tornadoInFrame(state, day);
+  const boxWide = (day.camera.viewfinderDegrees / tuning.camera.viewDegrees) * width;
   ctx.lineWidth = 5;
   ctx.strokeStyle = filming ? '#ff4d4d' : '#dce6ee';
   ctx.strokeRect((width - boxWide) / 2, height * 0.12, boxWide, height * 0.62);
@@ -115,7 +126,7 @@ export function drawWindshield(ctx, state) {
   ctx.fillText(`${filming ? '● REC' : 'REC'}  ${state.footage.toFixed(1)} s`, width * 0.95, height * 0.035);
 
   // In the box but outside the footage ring: say why it is not paying.
-  if (filming && payPerSecond(milesToFunnel(state), tuning) === 0) {
+  if (filming && payPerSecond(milesToFunnel(state), day) === 0) {
     ctx.font = '40px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Too far away to sell. Get inside the footage ring.', width / 2, height * 0.76);

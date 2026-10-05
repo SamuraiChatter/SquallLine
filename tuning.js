@@ -5,6 +5,9 @@ export const tuning = {
   // The name of the game, shown on the browser tab.
   title: 'SquallLine',
 
+  // The money in the bank at the start of a new game, in dollars.
+  startingBalance: 0,
+
   // How fast the car drives, in miles each second. Real cars are much slower:
   // this is game speed, so a chase does not take all afternoon.
   carMilesPerSecond: 0.4,
@@ -40,15 +43,10 @@ export const tuning = {
   // the end of the day.
   tvStation: 'Twister TV',
 
-  footage: {
-    // How many miles out from the tornado the footage ring reaches. Footage
-    // shot from outside the ring pays nothing.
-    ringMiles: 6,
-
-    // What one second of footage pays, in dollars: at the ring's edge, and
-    // right next to the tornado. In between pays in between.
-    payAtEdge: 20,
-    payAtTornado: 200,
+  tornado: {
+    // How big the tornado's marker is on the map at each strength, from EF0
+    // to EF5, in miles. A stronger tornado is a bigger one.
+    mapMiles: [0.4, 0.5, 0.65, 0.8, 1, 1.2],
   },
 
   danger: {
@@ -92,34 +90,127 @@ export const tuning = {
     damagePerSecond: 0.03,
   },
 
-  // The storm for the day: the name of a storm file saved from the design
-  // mode and put in the storms folder, such as 'my-storm.json'. Leave it
-  // empty ('') to use the storm set out just below instead.
-  stormFile: '',
+  // The chase days, in the order they are played. Add or take away a day by
+  // adding or taking away a block. Each day has:
+  //
+  // stormFile: the name of a storm file saved from the design mode and put
+  //   in the storms folder, such as 'my-storm.json'. Leave it empty ('') to
+  //   use the path and tornadoes typed in just below it instead.
+  // path: the corners of the storm's path, from where it starts to where it
+  //   ends. Each is so many miles east (x) and north (y) of the middle of
+  //   the territory. A minus number means west or south.
+  // tornadoes: one line for each tornado: where along the path it touches
+  //   down and where it dies, and its strength from 0 for EF0 to 5 for EF5.
+  //   0 is the start of the path, 1 is the end, 0.5 is half way. Keep them
+  //   in order, with a gap between one ending and the next starting.
+  // footage.ringMiles: how many miles out from the tornado the footage ring
+  //   reaches. Footage shot from outside the ring pays nothing. 0 means the
+  //   ring is the tornado itself, so nothing filmed from outside it pays.
+  // footage.payAtEdge and payAtTornado: what one second of footage pays, in
+  //   dollars: at the ring's edge, and right next to the tornado. In between
+  //   pays in between.
+  days: [
+    // Day one.
+    {
+      stormFile: '',
+      path: [
+        { x: -28, y: -12 },
+        { x: -8, y: 0 },
+        { x: 10, y: 6 },
+        { x: 28, y: 18 },
+      ],
+      tornadoes: [
+        { start: 0.25, end: 0.4, strength: 0 },
+        { start: 0.6, end: 0.8, strength: 0 },
+      ],
+      footage: { ringMiles: 6, payAtEdge: 20, payAtTornado: 200 },
+    },
+    // Day two.
+    {
+      stormFile: '',
+      path: [
+        { x: -25.4, y: -18.4 },
+        { x: -7.4, y: -15.9 },
+        { x: 6.6, y: -7.9 },
+        { x: 22.6, y: -3.4 },
+        { x: 28, y: -0.7 },
+      ],
+      tornadoes: [
+        { start: 0.15, end: 0.28, strength: 1 },
+        { start: 0.6, end: 0.75, strength: 1 },
+      ],
+      footage: { ringMiles: 5, payAtEdge: 30, payAtTornado: 300 },
+    },
+    // Day three.
+    {
+      stormFile: '',
+      path: [
+        { x: -1.4, y: -28.4 },
+        { x: 5.6, y: -18.4 },
+        { x: 16.6, y: -11.4 },
+        { x: 24.6, y: -5.4 },
+        { x: 27.6, y: 8.6 },
+      ],
+      tornadoes: [
+        { start: 0.1, end: 0.25, strength: 2 },
+        { start: 0.5, end: 0.7, strength: 2 },
+      ],
+      footage: { ringMiles: 4, payAtEdge: 45, payAtTornado: 450 },
+    },
+    // Day four.
+    {
+      stormFile: '',
+      path: [
+        { x: -25.4, y: -25.4 },
+        { x: -17.4, y: -14.4 },
+        { x: -14.4, y: -5.4 },
+        { x: -7.4, y: 5.6 },
+        { x: -3, y: 12 },
+      ],
+      tornadoes: [
+        { start: 0.2, end: 0.4, strength: 3 },
+        { start: 0.55, end: 0.8, strength: 3 },
+      ],
+      footage: { ringMiles: 3, payAtEdge: 70, payAtTornado: 700 },
+    },
+    // Day five.
+    {
+      stormFile: '',
+      path: [
+        { x: 14.6, y: -28.4 },
+        { x: 17.6, y: -16.4 },
+        { x: 22.1, y: -3.4 },
+        { x: 23.6, y: 7.6 },
+        { x: 28, y: 20 },
+      ],
+      tornadoes: [
+        { start: 0.15, end: 0.4, strength: 4 },
+        { start: 0.55, end: 0.85, strength: 4 },
+      ],
+      footage: { ringMiles: 2, payAtEdge: 100, payAtTornado: 1000 },
+    },
+    // Day six. The footage ring is the tornado itself.
+    {
+      stormFile: '',
+      path: [
+        { x: -25.4, y: -17.4 },
+        { x: -9.4, y: -15.4 },
+        { x: 5.6, y: -7.9 },
+        { x: 16.6, y: -6.4 },
+        { x: 28, y: -2 },
+      ],
+      tornadoes: [
+        { start: 0.3, end: 0.75, strength: 5 },
+      ],
+      footage: { ringMiles: 0, payAtEdge: 2000, payAtTornado: 2000 },
+    },
+  ],
 
+  // What every day's storm has in common.
   storm: {
-    // The corners of the storm's path, from where it starts to where it ends.
-    // Each is so many miles east (x) and north (y) of the middle of the
-    // territory. A minus number means west or south.
-    path: [
-      { x: -28, y: -12 },
-      { x: -8, y: 0 },
-      { x: 10, y: 6 },
-      { x: 28, y: 18 },
-    ],
-
     // How fast the storm travels, in miles each second. At 0.22 it crosses
     // in about five minutes, and the car is about twice as fast.
     milesPerSecond: 0.22,
-
-    // One line for each tornado: where along the path it touches down and
-    // where it dies. 0 is the start of the path, 1 is the end, 0.5 is half
-    // way. Add a line for another tornado. Keep them in order, with a gap
-    // between one ending and the next starting.
-    tornadoes: [
-      { start: 0.25, end: 0.4 },
-      { start: 0.6, end: 0.8 },
-    ],
 
     // How long before a tornado the hook starts to grow, as a share of the
     // path. Bigger gives the player more warning.

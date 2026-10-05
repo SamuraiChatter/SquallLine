@@ -4,8 +4,8 @@
 import { tuning } from '../tuning.js';
 import { draw } from './draw.js';
 import { loadMap } from './map.js';
-import { drawDamage, drawMoney, drawPause, drawSummary, drawTrialNote } from './hud.js';
-import { headHome, newGame, step, toggleFilming } from './rules.js';
+import { drawBriefing, drawDamage, drawFinalScore, drawMoney, drawPause, drawSummary, drawTrialNote } from './hud.js';
+import { beginChase, dayTuning, headHome, newRun, nextDay, step, strongest, toggleFilming } from './rules.js';
 import { designKey, readStorm } from './storms.js';
 import { drawWindshield } from './windshield.js';
 
@@ -35,24 +35,31 @@ const map = await loadMap().catch(sayAndStop('The map did not load. Try refreshi
 const trial = new URLSearchParams(location.search).has('trial');
 
 /**
- * The day's designed storm, if it has one: the storm being tried out from
- * the design mode, or else the storm file named in the tuning file.
- * @returns {Promise<import('./storms.js').DesignedStorm | null>}
+ * The chase days: the tuning file's, each with its storm file's path and
+ * tornadoes in place of its own if it names one.
  */
-async function loadStorm() {
-  if (trial) {
-    const text = sessionStorage.getItem(designKey);
-    if (text) return readStorm(text);
+async function loadDays() {
+  // A storm being tried out from the design mode is a run of one day. It
+  // plays by the footage numbers of the day with tornadoes of its strength.
+  const text = trial && sessionStorage.getItem(designKey);
+  if (text) {
+    const designed = readStorm(text);
+    const like = tuning.days[Math.min(strongest(designed.tornadoes), tuning.days.length - 1)];
+    return [{ ...like, ...designed }];
   }
-  if (!tuning.stormFile) return null;
-  const response = await fetch(`storms/${tuning.stormFile}`);
-  if (!response.ok) throw new Error(`storms/${tuning.stormFile} answered ${response.status}`);
-  return readStorm(await response.text());
+  return Promise.all(
+    tuning.days.map(async (day) => {
+      if (!day.stormFile) return day;
+      const response = await fetch(`storms/${day.stormFile}`);
+      if (!response.ok) throw new Error(`storms/${day.stormFile} answered ${response.status}`);
+      return { ...day, ...readStorm(await response.text()) };
+    }),
+  );
 }
-const designed = await loadStorm().catch(sayAndStop('The storm file did not load. Check its name in tuning.js.'));
-// The numbers the rules play by: the tuning file's, with the designed storm's
-// path and tornadoes in place of its own.
-const game = designed ? { ...tuning, storm: { ...tuning.storm, ...designed } } : tuning;
+// The numbers the whole run plays by.
+const run = { ...tuning, days: await loadDays().catch(sayAndStop('A storm file did not load. Check its name in tuning.js.')) };
+// A storm being tried out skips the briefing.
+const start = () => (trial ? beginChase(newRun(run, map.roads)) : newRun(run, map.roads));
 
 // The arrow keys being held down right now.
 /** @type {Set<string>} */
@@ -72,12 +79,24 @@ addEventListener('keydown', (event) => {
   if (trial && key === 'd') location.href = 'design.html';
   // P pauses and carries on. While paused, H heads home and ends the day.
   // A key held down repeats; act only on the first press.
-  if (key === 'p' && !event.repeat && !state.dayOver) paused = !paused;
+  if (key === 'p' && !event.repeat && !state.briefing && !state.dayOver) paused = !paused;
   if (key === 'h' && paused) {
     state = headHome(state, game);
     paused = false;
   }
-  if (paused || state.dayOver) return;
+  // Enter moves on from the briefing, the day summary and the final score.
+  // In the middle of a chase it does nothing.
+  if (key === 'enter' && !event.repeat && (state.briefing || state.dayOver)) {
+    if (state.briefing) state = beginChase(state);
+    else if (state.finished) state = newRun(run, map.roads, state.best);
+    else if (trial) state = start();
+    else state = nextDay(state, run, map.roads);
+    game = dayTuning(run, state.day);
+    strikesSeen = state.debrisStrikes;
+    wholeTerritory = false;
+    held.clear();
+  }
+  if (paused || state.briefing || state.dayOver) return;
 
   if (key === 'z' && !event.repeat && !state.filming) wholeTerritory = !wholeTerritory;
   // Space pulls over to film, and Space again drives on.
@@ -101,7 +120,9 @@ addEventListener('blur', () => held.clear());
 /** @param {string} key */
 const pressed = (key) => (held.has(key) ? 1 : 0);
 
-let state = newGame(game, map.roads);
+let state = start();
+// The numbers today plays by.
+let game = dayTuning(run, state.day);
 // How many debris strikes have been shown, and when the last one landed.
 let strikesSeen = 0;
 let struckAt = -Infinity;
@@ -125,12 +146,15 @@ function frame(now) {
     strikesSeen = state.debrisStrikes;
     struckAt = now;
   }
-  if (state.filming) drawWindshield(ctx, state);
-  else draw(ctx, state, wholeTerritory, map);
+  // The briefing sits over the whole territory, with the storm coming in.
+  if (state.filming) drawWindshield(ctx, state, game);
+  else draw(ctx, state, wholeTerritory || state.briefing, map, game);
   drawMoney(ctx, state);
-  drawDamage(ctx, state, now - struckAt < 180);
+  drawDamage(ctx, state, now - struckAt < 180, game);
   if (trial) drawTrialNote(ctx);
-  if (state.dayOver) drawSummary(ctx, state);
+  if (state.briefing) drawBriefing(ctx, state, game, run.days.length);
+  else if (state.finished) drawFinalScore(ctx, state);
+  else if (state.dayOver) drawSummary(ctx, state, trial);
   else if (paused) drawPause(ctx);
   requestAnimationFrame(frame);
 }

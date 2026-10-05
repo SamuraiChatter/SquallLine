@@ -37,8 +37,8 @@ GitHub Pages publishes `main` at https://samuraichatter.github.io/SquallLine/.
   lead draws storms on the map. Players are not shown it: nothing in the game
   links to it. `src/storms.js` holds its sums and reads and writes storm
   files, and has tests.
-- `storms/` holds the storm files saved from the design mode. `stormFile` in
-  `tuning.js` names the one the day uses.
+- `storms/` holds the storm files saved from the design mode. Each day in
+  `tuning.js` has a `stormFile` that names the one it uses.
 - Types are JSDoc comments. The editor checks them through `jsconfig.json`.
 - Paths in the page are relative, and a file's name is spelled the same way
   everywhere, capitals included. Pages serves the game from `/SquallLine/` and
