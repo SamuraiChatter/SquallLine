@@ -5,6 +5,7 @@
 // is written on the placeholder so it is easy to see which drawing goes where.
 
 import { tuning } from '../tuning.js';
+import { drawDashRadar } from './draw.js';
 import { anchorWait, cameraOffFunnel, inDebrisZone, inHailCore, insideTornado, milesToFunnel, payPerSecond, tornadoInFrame } from './rules.js';
 
 /**
@@ -132,6 +133,13 @@ export function drawWindshield(ctx, state, day) {
   ctx.fillRect(0, 0, width * 0.035, height);
   ctx.fillRect(width * 0.965, 0, width * 0.035, height);
   label(ctx, 'art/dashboard.png', width * 0.05, height * 0.9);
+
+  // art/dash-radar.png: the dash radar stands on the dashboard, to the right.
+  if (day.dashRadar) {
+    const box = { left: width * 0.72, top: height * 0.6, wide: width * 0.22, tall: height * 0.25 };
+    drawDashRadar(ctx, state, day, box);
+    label(ctx, 'art/dash-radar.png', box.left + 10, box.top + 8);
+  }
 
   // The viewfinder box: red while the tornado is inside it and being filmed.
   // Inside the tornado there is nothing to aim at, and no box.

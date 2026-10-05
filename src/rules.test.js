@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildNetwork } from './roads.js';
-import { anchorWait, beginChase, buy, dangerRingMiles, dayTuning, freePlay, insideTornado, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, readSave, resume, runFinished, saveOf, step, strongest, toggleAnchor, toggleFilming, tornadoInFrame, whyNotBuy, windDamagePerSecond } from './rules.js';
+import { anchorWait, windMph, beginChase, buy, dangerRingMiles, dayTuning, freePlay, insideTornado, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, readSave, resume, runFinished, saveOf, step, strongest, toggleAnchor, toggleFilming, tornadoInFrame, whyNotBuy, windDamagePerSecond } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
@@ -14,6 +14,7 @@ const tuning = {
   debris: { zoneMiles: 1, strikeEverySeconds: 0.5, damagePerStrike: 0.1 },
   hail: { coreMilesLong: 2, coreMilesWide: 1, damagePerSecond: 0.2 },
   anchor: { downSeconds: 2, upSeconds: 1 },
+  wind: { mphAtTornado: [100, 120, 140, 160, 180, 200], reachMiles: 10, bonusPerMph: 2 },
 };
 
 // Two roads that cross in the middle of the territory: one from 30 miles west
@@ -386,6 +387,9 @@ const runTuning = {
     { id: 'spoiler', price: 10, needs: 'engine' },
     { id: 'skirts', price: 600, anchoredRingTimes: 0.5 },
     { id: 'spikes', price: 700, needs: 'skirts', anchorHolds: true },
+    { id: 'radar', price: 800, dashRadar: true },
+    { id: 'gauge', price: 900, windGauge: true },
+    { id: 'turret', price: 1000, viewfinderTimes: 2 },
   ],
   days: [0, 1, 2].map((strength) => ({
     path: [{ x: 20, y: 20 }, { x: 30, y: 20 }],
@@ -865,4 +869,78 @@ test('on the last day only an anchored direct hit earns anything', () => {
   const loose = toggleFilming(newGame(off, roads));
   assert.equal(tornadoInFrame(loose, off), true);
   assert.equal(step(loose, still, 1, off, roads).money, 0);
+});
+
+test('the dash radar is there only with the part', () => {
+  assert.equal(dayTuning(runTuning, 1).dashRadar, false);
+  assert.equal(dayTuning(runTuning, 1, ['radar']).dashRadar, true);
+});
+
+test('with the turret, the viewfinder box is wider and holds a tornado further off centre', () => {
+  const plain = dayTuning(runTuning, 1);
+  const turret = dayTuning(runTuning, 1, ['turret']);
+  assert.equal(plain.camera.viewfinderDegrees, 20);
+  assert.equal(turret.camera.viewfinderDegrees, 40);
+  // The camera points 15 degrees off the tornado: outside a 20 degree box,
+  // inside a 40 degree one.
+  const day = parked([], 5);
+  const filming = toggleFilming(newGame(day, roads));
+  const off = { ...filming, camera: filming.camera + 15 };
+  assert.equal(tornadoInFrame(off, { ...day, camera: plain.camera }), false);
+  assert.equal(tornadoInFrame(off, { ...day, camera: turret.camera }), true);
+});
+
+test('the wind is fastest at the tornado, faster for a stronger one, and dies away with distance', () => {
+  assert.equal(windMph(0, 0, tuning), 100);
+  assert.equal(windMph(0, 5, tuning), 200);
+  assert.equal(windMph(5, 0, tuning), 50);
+  assert.equal(windMph(10, 5, tuning), 0);
+  assert.equal(windMph(30, 5, tuning), 0);
+});
+
+test('without the wind gauge nothing is recorded and no bonus is paid', () => {
+  const day = calm([], 5);
+  const state = step(newGame(day, roads), still, 1, day, roads);
+  assert.equal(state.topWind, 0);
+  const ended = headHome(state, day);
+  assert.equal(ended.scienceBonus, 0);
+  assert.equal(ended.balance, 0);
+});
+
+test('with the wind gauge, the day keeps its top wind and the summary pays a bonus for it', () => {
+  const far = calm(['gauge'], 8);
+  const near = calm(['gauge'], 5);
+  let state = step(newGame(far, roads), still, 1, far, roads);
+  assert.ok(Math.abs(state.topWind - 20) < 1e-9);
+  // Closer, the reading climbs; further off again, it keeps the highest.
+  state = step(state, still, 1, near, roads);
+  assert.equal(state.topWind, 50);
+  state = step(state, still, 1, far, roads);
+  assert.equal(state.topWind, 50);
+  const ended = headHome({ ...state, money: 30 }, far);
+  assert.equal(ended.scienceBonus, 100);
+  assert.equal(ended.balance, 130);
+});
+
+test('a closer pass gives a higher reading and a bigger bonus', () => {
+  const pass = (/** @type {number} */ miles) => {
+    const day = calm(['gauge'], miles);
+    return headHome(step(newGame(day, roads), still, 1, day, roads), day);
+  };
+  assert.ok(pass(2).topWind > pass(6).topWind);
+  assert.ok(pass(2).scienceBonus > pass(6).scienceBonus);
+});
+
+test('the gauge reads nothing when no tornado is on the ground', () => {
+  const day = { ...dayTuning(runTuning, 1, ['gauge']), storm: { ...tuning.storm, tornadoes: [] } };
+  assert.equal(step(newGame(day, roads), still, 1, day, roads).topWind, 0);
+});
+
+test('in free play the science bonus is shown but the score stays the same', () => {
+  const save = { day: 4, balance: 1050, best: 2000, parts: ['gauge'] };
+  const day = calm(['gauge'], 5);
+  const state = step(beginChase(freePlay(save, 1, runTuning, roads)), still, 1, day, roads);
+  const ended = headHome(state, day);
+  assert.equal(ended.scienceBonus, 100);
+  assert.equal(ended.balance, 1050);
 });

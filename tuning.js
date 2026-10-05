@@ -41,6 +41,10 @@ export const tuning = {
 
     // How fast left and right swing the camera, in degrees each second.
     panDegreesPerSecond: 35,
+
+    // How many miles fit across the dash radar, for a vehicle that has one.
+    // Smaller zooms it in.
+    dashRadarMiles: 30,
   },
 
   // The TV station that buys the footage. Its name shows on the summary at
@@ -210,6 +214,20 @@ export const tuning = {
     },
   ],
 
+  wind: {
+    // How fast the wind blows right at a tornado of each strength, from EF0
+    // to EF5, in miles an hour. The roof wind gauge reads less the further
+    // away the car is.
+    mphAtTornado: [80, 100, 125, 150, 180, 220],
+
+    // How many miles out from the tornado its wind dies away to nothing.
+    reachMiles: 6,
+
+    // What science pays, in dollars, for each mile an hour of the day's top
+    // wind on the roof gauge. At 10, a reading of 150 pays $1,500.
+    bonusPerMph: 10,
+  },
+
   anchor: {
     // How many seconds the skirts and spikes take to go down, and to come
     // back up. The car cannot drive until they are up.
@@ -247,6 +265,10 @@ export const tuning = {
   //   and this is how big the danger ring is while it is anchored.
   // anchorHolds: with this, an anchored vehicle stays put when the tornado
   //   passes right over it, and films from inside.
+  // dashRadar: with this, a small radar stays on screen while filming.
+  // windGauge: with this, the day's top wind is recorded and the summary
+  //   pays a science bonus for it.
+  // viewfinderTimes: how wide the viewfinder box is.
   parts: [
     {
       id: 'lexan',
@@ -318,6 +340,36 @@ export const tuning = {
       picture: 'art/part-spikes.png',
       at: { x: 0.8, y: 0.9 },
       anchorHolds: true,
+    },
+    {
+      id: 'radar',
+      name: 'Dash radar',
+      price: 3000,
+      does: 'A small radar stays on screen while you film.',
+      needs: '',
+      picture: 'art/part-radar.png',
+      at: { x: 0.8, y: 0.3 },
+      dashRadar: true,
+    },
+    {
+      id: 'gauge',
+      name: 'Roof wind gauge',
+      price: 3500,
+      does: 'Records the top wind of the day. Science pays a bonus for it.',
+      needs: '',
+      picture: 'art/part-gauge.png',
+      at: { x: 0.15, y: 0.08 },
+      windGauge: true,
+    },
+    {
+      id: 'turret',
+      name: 'Filming turret',
+      price: 3000,
+      does: 'A wider viewfinder box, so the tornado is easier to keep in.',
+      needs: '',
+      picture: 'art/part-turret.png',
+      at: { x: 0.8, y: 0.08 },
+      viewfinderTimes: 1.6,
     },
   ],
 
