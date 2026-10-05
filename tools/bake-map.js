@@ -7,15 +7,17 @@
 // the file. The data is © OpenStreetMap contributors, under the ODbL.
 
 import { writeFileSync } from 'node:fs';
+import { gridRoads, withoutDeadEnds } from './grid-roads.js';
 
 // The territory: central Oklahoma around Norman, about 56 miles from west to
 // east and 62 from south to north.
 const bounds = { south: 34.8, west: -98.0, north: 35.7, east: -97.0 };
 
 const query = `
-[out:json][timeout:180][bbox:${bounds.south},${bounds.west},${bounds.north},${bounds.east}];
+[out:json][timeout:300][bbox:${bounds.south},${bounds.west},${bounds.north},${bounds.east}];
 (
   way[highway~"^(motorway|trunk|primary|secondary|tertiary|unclassified)(_link)?$"];
+  way[highway=residential];
   node[place~"^(city|town|village)$"];
   relation[boundary=administrative][admin_level=6];
 );
@@ -127,13 +129,21 @@ for (const element of elements) {
   }
 }
 
+// OpenStreetMap calls both the rural one-mile grid and city streets
+// "residential". Keep the grid and leave the streets out.
+const mainRoads = roads.filter((road) => road.class !== 'residential');
+const grid = withoutDeadEnds(
+  gridRoads(roads.filter((road) => road.class === 'residential'), bounds),
+  mainRoads,
+);
+
 const map = {
   credit: '© OpenStreetMap contributors, ODbL 1.0. https://www.openstreetmap.org/copyright',
   bounds,
-  roads,
+  roads: [...mainRoads, ...grid],
   places,
   counties,
 };
 const file = new URL('../data/map.json', import.meta.url);
 writeFileSync(file, JSON.stringify(map));
-console.log(`${roads.length} roads, ${places.length} places, ${counties.length} county lines`);
+console.log(`${mainRoads.length} main roads, ${grid.length} grid roads, ${places.length} places, ${counties.length} county lines`);
