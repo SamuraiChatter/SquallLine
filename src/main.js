@@ -4,8 +4,9 @@
 import { tuning } from '../tuning.js';
 import { draw } from './draw.js';
 import { loadMap } from './map.js';
-import { drawDamage, drawMoney, drawPause, drawSummary } from './hud.js';
+import { drawDamage, drawMoney, drawPause, drawSummary, drawTrialNote } from './hud.js';
 import { headHome, newGame, step, toggleFilming } from './rules.js';
+import { designKey, readStorm } from './storms.js';
 import { drawWindshield } from './windshield.js';
 
 const canvas = /** @type {HTMLCanvasElement} */ (document.querySelector('canvas'));
@@ -13,15 +14,45 @@ const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
 
 document.title = tuning.title;
 
-// The game waits here until the map has arrived.
-const map = await loadMap().catch((error) => {
-  // Say so on the screen: otherwise a map that fails to load is just black.
+/**
+ * Says on the screen that something did not load: otherwise the game is just
+ * black.
+ * @param {string} words
+ * @returns {(error: unknown) => never}
+ */
+const sayAndStop = (words) => (error) => {
   ctx.fillStyle = '#dce6ee';
   ctx.font = '48px system-ui, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('The map did not load. Try refreshing the page.', canvas.width / 2, canvas.height / 2);
+  ctx.fillText(words, canvas.width / 2, canvas.height / 2);
   throw error;
-});
+};
+
+// The game waits here until the map has arrived.
+const map = await loadMap().catch(sayAndStop('The map did not load. Try refreshing the page.'));
+
+// True when the design mode has sent a storm over to be tried out.
+const trial = new URLSearchParams(location.search).has('trial');
+
+/**
+ * The day's designed storm, if it has one: the storm being tried out from
+ * the design mode, or else the storm file named in the tuning file.
+ * @returns {Promise<import('./storms.js').DesignedStorm | null>}
+ */
+async function loadStorm() {
+  if (trial) {
+    const text = sessionStorage.getItem(designKey);
+    if (text) return readStorm(text);
+  }
+  if (!tuning.stormFile) return null;
+  const response = await fetch(`storms/${tuning.stormFile}`);
+  if (!response.ok) throw new Error(`storms/${tuning.stormFile} answered ${response.status}`);
+  return readStorm(await response.text());
+}
+const designed = await loadStorm().catch(sayAndStop('The storm file did not load. Check its name in tuning.js.'));
+// The numbers the rules play by: the tuning file's, with the designed storm's
+// path and tornadoes in place of its own.
+const game = designed ? { ...tuning, storm: { ...tuning.storm, ...designed } } : tuning;
 
 // The arrow keys being held down right now.
 /** @type {Set<string>} */
@@ -38,11 +69,12 @@ addEventListener('keydown', (event) => {
   // scroll the page.
   if (event.key === ' ' || event.key.startsWith('Arrow')) event.preventDefault();
   const key = event.key.toLowerCase();
+  if (trial && key === 'd') location.href = 'design.html';
   // P pauses and carries on. While paused, H heads home and ends the day.
   // A key held down repeats; act only on the first press.
   if (key === 'p' && !event.repeat && !state.dayOver) paused = !paused;
   if (key === 'h' && paused) {
-    state = headHome(state, tuning);
+    state = headHome(state, game);
     paused = false;
   }
   if (paused || state.dayOver) return;
@@ -69,7 +101,7 @@ addEventListener('blur', () => held.clear());
 /** @param {string} key */
 const pressed = (key) => (held.has(key) ? 1 : 0);
 
-let state = newGame(tuning, map.roads);
+let state = newGame(game, map.roads);
 // How many debris strikes have been shown, and when the last one landed.
 let strikesSeen = 0;
 let struckAt = -Infinity;
@@ -87,7 +119,7 @@ function frame(now) {
     x: pressed('ArrowRight') - pressed('ArrowLeft'),
     y: pressed('ArrowUp') - pressed('ArrowDown'),
   };
-  if (!paused) state = step(state, steering, dt, tuning, map.roads);
+  if (!paused) state = step(state, steering, dt, game, map.roads);
   // Remember when debris last hit, so the screen can flash for a moment.
   if (state.debrisStrikes > strikesSeen) {
     strikesSeen = state.debrisStrikes;
@@ -97,6 +129,7 @@ function frame(now) {
   else draw(ctx, state, wholeTerritory, map);
   drawMoney(ctx, state);
   drawDamage(ctx, state, now - struckAt < 180);
+  if (trial) drawTrialNote(ctx);
   if (state.dayOver) drawSummary(ctx, state);
   else if (paused) drawPause(ctx);
   requestAnimationFrame(frame);

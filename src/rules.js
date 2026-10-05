@@ -308,6 +308,16 @@ function driveOrFilm(state, steering, dt, tuning, roads) {
 }
 
 /**
+ * Where a storm's hook curls and its tornado touches down: on the storm's
+ * south-west side.
+ * @param {Point} storm The middle of the storm.
+ * @returns {Point}
+ */
+export function funnelOf(storm) {
+  return { x: storm.x - 2.6, y: storm.y - 2.6 };
+}
+
+/**
  * The storm once it has travelled this many miles along its path.
  * @param {number} miles
  * @param {Tuning['storm']} tuning
@@ -344,5 +354,5 @@ function stormAt(miles, tuning) {
   }
   const last = tuning.tornadoes.at(-1);
   const spent = last !== undefined && along >= last.end;
-  return { miles, x, y, hook, tornado, funnel: { x: x - 2.6, y: y - 2.6 }, spent };
+  return { miles, x, y, hook, tornado, funnel: funnelOf({ x, y }), spent };
 }

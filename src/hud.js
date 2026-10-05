@@ -22,6 +22,20 @@ export function drawMoney(ctx, state) {
 }
 
 /**
+ * Says, in the bottom left corner, that this is a storm being tried out from
+ * the design mode.
+ * @param {CanvasRenderingContext2D} ctx
+ */
+export function drawTrialNote(ctx) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#dce6ee';
+  ctx.font = '30px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('Trying your storm. Press D to go back to the design.', ctx.canvas.width * 0.05, ctx.canvas.height * 0.97);
+}
+
+/**
  * Paints the damage meter along the top, in the middle.
  * @param {CanvasRenderingContext2D} ctx
  * @param {import('./rules.js').GameState} state
