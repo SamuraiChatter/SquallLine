@@ -56,6 +56,11 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {number} best The best final balance of any finished run.
  * @property {boolean} freePlay True while replaying a day after a finished
  *   run. Free play never changes the balance, which is the recorded score.
+ * @property {string[]} parts The ids of the parts bought for the vehicle.
+ * @property {boolean} garage True while the garage is open, between a day's
+ *   summary and the next day's briefing.
+ * @property {boolean} flipped True while the car is lying where the tornado
+ *   flipped it. Only a car with a roll cage is still in the day to do so.
  */
 
 /**
@@ -75,28 +80,98 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  */
 
 /**
- * The numbers a whole run plays by: what the days share, and each day's own.
- * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, days: Day[] }} RunTuning
+ * A part the garage sells. What it does is in its numbers, which are all set
+ * out in the tuning file.
+ * @typedef {object} Part
+ * @property {string} id What saves remember the part by.
+ * @property {number} price
+ * @property {string} [needs] The id of a part that has to be bought first.
+ * @property {number} [speedTimes]
+ * @property {number} [payTimes]
+ * @property {number} [hailDamageTimes]
+ * @property {number} [debrisDamageTimes]
+ * @property {number} [dangerRingTimes]
+ * @property {number} [flipDamage]
+ */
+
+/**
+ * The numbers a whole run plays by: what the days share, each day's own, and
+ * the parts the garage sells.
+ * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, days: Day[], parts: Part[] }} RunTuning
  */
 
 /**
  * The numbers one day plays by: the day's storm and footage numbers, set in
- * among what the days share.
- * @typedef {Omit<RunTuning, 'storm' | 'days' | 'startingBalance'> & { storm: RunTuning['storm'] & Pick<Day, 'path' | 'tornadoes'>, footage: Day['footage'] }} Tuning
+ * among what the days share, with the vehicle's parts counted in.
+ * @typedef {object} DayNumbers
+ * @property {RunTuning['storm'] & Pick<Day, 'path' | 'tornadoes'>} storm
+ * @property {Day['footage']} footage
+ * @property {RunTuning['danger'] & { flipDamage?: number }} danger With a
+ *   roll cage, flipDamage is how much of the damage meter a flip fills
+ *   instead of wrecking the car.
+ *
+ * @typedef {Omit<RunTuning, 'storm' | 'danger' | 'days' | 'parts' | 'startingBalance'> & DayNumbers} Tuning
  */
 
 /** @typedef {import('./roads.js').RoadNetwork} RoadNetwork */
 
 /**
- * The numbers one day plays by.
+ * The numbers one day plays by, with the vehicle's parts counted in.
  * @template {RunTuning} T
  * @param {T} tuning
  * @param {number} day Which day, counting from 1.
- * @returns {T & Tuning}
+ * @param {string[]} [owned] The ids of the parts on the vehicle.
+ * @returns {Omit<T, 'danger'> & Tuning}
  */
-export function dayTuning(tuning, day) {
+export function dayTuning(tuning, day, owned = []) {
   const { path, tornadoes, footage } = tuning.days[day - 1];
-  return { ...tuning, storm: { ...tuning.storm, path, tornadoes }, footage };
+  const parts = tuning.parts.filter((part) => owned.includes(part.id));
+  /**
+   * What the parts multiply one of the game's numbers by, between them.
+   * @param {'speedTimes' | 'payTimes' | 'hailDamageTimes' | 'debrisDamageTimes' | 'dangerRingTimes'} effect
+   */
+  const times = (effect) => parts.reduce((all, part) => all * (part[effect] ?? 1), 1);
+  return {
+    ...tuning,
+    carMilesPerSecond: tuning.carMilesPerSecond * times('speedTimes'),
+    storm: { ...tuning.storm, path, tornadoes },
+    footage: { ...footage, payAtEdge: footage.payAtEdge * times('payTimes'), payAtTornado: footage.payAtTornado * times('payTimes') },
+    danger: {
+      ...tuning.danger,
+      ringMiles: tuning.danger.ringMiles * times('dangerRingTimes'),
+      flipDamage: parts.find((part) => part.flipDamage !== undefined)?.flipDamage,
+    },
+    debris: { ...tuning.debris, damagePerStrike: tuning.debris.damagePerStrike * times('debrisDamageTimes') },
+    hail: { ...tuning.hail, damagePerSecond: tuning.hail.damagePerSecond * times('hailDamageTimes') },
+  };
+}
+
+/**
+ * Why a part cannot be bought right now: it is already owned, it needs
+ * another part first, or it costs more than the balance. Empty if it can.
+ * @param {GameState} state
+ * @param {Part} part
+ * @returns {'' | 'owned' | 'needs' | 'money'}
+ */
+export function whyNotBuy(state, part) {
+  if (state.parts.includes(part.id)) return 'owned';
+  if (part.needs && !state.parts.includes(part.needs)) return 'needs';
+  if (part.price > state.balance) return 'money';
+  return '';
+}
+
+/**
+ * Buys a part in the garage: its price comes off the balance and it goes on
+ * the vehicle. Nothing happens if it cannot be bought.
+ * @param {GameState} state
+ * @param {string} id
+ * @param {RunTuning} tuning
+ * @returns {GameState}
+ */
+export function buy(state, id, tuning) {
+  const part = tuning.parts.find((one) => one.id === id);
+  if (!state.garage || !part || whyNotBuy(state, part)) return state;
+  return { ...state, balance: state.balance - part.price, parts: [...state.parts, id] };
 }
 
 /**
@@ -115,6 +190,7 @@ export function strongest(tornadoes) {
  * @property {number} balance The money in the bank. Once the run is
  *   finished, this is its final score.
  * @property {number} best The best final balance of any finished run.
+ * @property {string[]} parts The ids of the parts bought for the vehicle.
  */
 
 // Where the browser keeps the save.
@@ -128,19 +204,24 @@ export const saveKey = 'squallline-save';
  * @returns {Save}
  */
 export function newSave(tuning, best = 0) {
-  return { day: 1, balance: tuning.startingBalance, best };
+  return { day: 1, balance: tuning.startingBalance, best, parts: [] };
 }
 
 /**
- * What to keep once a day is over: the next day, the balance, and the best
- * final balance, which the last day's balance may have beaten.
+ * What to keep once a day is over: the next day, the balance, the parts, and
+ * the best final balance, which the last day's balance may have beaten.
  * @param {GameState} state A day that has ended.
  * @param {RunTuning} tuning
  * @returns {Save}
  */
 export function saveOf(state, tuning) {
   const finished = state.day >= tuning.days.length;
-  return { day: state.day + 1, balance: state.balance, best: finished ? Math.max(state.best, state.balance) : state.best };
+  return {
+    day: state.day + 1,
+    balance: state.balance,
+    best: finished ? Math.max(state.best, state.balance) : state.best,
+    parts: state.parts,
+  };
 }
 
 /**
@@ -167,25 +248,19 @@ export function readSave(text, tuning) {
   } catch {
     return null;
   }
-  const { day, balance, best } = /** @type {Partial<Save>} */ (kept ?? {});
+  const { day, balance, best, parts } = /** @type {Partial<Save>} */ (kept ?? {});
   /** @param {unknown} n */
   const isMoney = (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
   if (typeof day !== 'number' || !Number.isInteger(day) || day < 1 || !isMoney(balance) || !isMoney(best)) return null;
-  // The tuning file may have fewer days now than when the save was made.
-  return { day: Math.min(day, tuning.days.length + 1), balance: /** @type {number} */ (balance), best: /** @type {number} */ (best) };
-}
-
-/**
- * A day's briefing.
- * @param {RunTuning} tuning
- * @param {RoadNetwork} roads
- * @param {number} day
- * @param {number} balance
- * @param {number} best
- * @returns {GameState}
- */
-function briefingFor(tuning, roads, day, balance, best) {
-  return { ...newGame(dayTuning(tuning, day), roads), day, briefing: true, balance, best };
+  return {
+    // The tuning file may have fewer days now than when the save was made.
+    day: Math.min(day, tuning.days.length + 1),
+    balance: /** @type {number} */ (balance),
+    best: /** @type {number} */ (best),
+    // Only parts the garage still sells, each once. A save from before the
+    // garage has none.
+    parts: tuning.parts.map((part) => part.id).filter((id) => Array.isArray(parts) && parts.includes(id)),
+  };
 }
 
 /**
@@ -207,7 +282,7 @@ export function newRun(tuning, roads, best = 0) {
  * @returns {GameState}
  */
 export function resume(save, tuning, roads) {
-  return briefingFor(tuning, roads, save.day, save.balance, save.best);
+  return { ...newGame(dayTuning(tuning, save.day), roads), ...save, briefing: true };
 }
 
 /**
@@ -219,7 +294,7 @@ export function resume(save, tuning, roads) {
  * @returns {GameState}
  */
 export function freePlay(save, day, tuning, roads) {
-  return { ...briefingFor(tuning, roads, day, save.balance, save.best), freePlay: true };
+  return { ...resume({ ...save, day }, tuning, roads), freePlay: true };
 }
 
 /**
@@ -232,9 +307,10 @@ export function beginChase(state) {
 }
 
 /**
- * Moves on from the day summary: to the next day's briefing, or after the
- * last day to the final score. The player always moves on, whatever the day
- * earned.
+ * Moves on from the day summary: to the garage, and from the garage to the
+ * next day's briefing. After the last day it is straight to the final score,
+ * with no garage: there is nothing left to spend the score on. The player
+ * always moves on, whatever the day earned.
  * @param {GameState} state
  * @param {RunTuning} tuning
  * @param {RoadNetwork} roads
@@ -244,7 +320,8 @@ export function nextDay(state, tuning, roads) {
   if (!state.dayOver || state.finished || state.freePlay) return state;
   // The final score is the balance once the last day's repairs are paid.
   if (state.day >= tuning.days.length) return { ...state, finished: true, best: Math.max(state.best, state.balance) };
-  return briefingFor(tuning, roads, state.day + 1, state.balance, state.best);
+  if (!state.garage) return { ...state, garage: true };
+  return resume(saveOf(state, tuning), tuning, roads);
 }
 
 /**
@@ -275,6 +352,9 @@ export function newGame(tuning, roads) {
     finished: false,
     best: 0,
     freePlay: false,
+    parts: [],
+    garage: false,
+    flipped: false,
   };
 }
 
@@ -383,6 +463,8 @@ export function step(state, steering, dt, tuning, roads) {
 /**
  * What the wind does to the car over a moment. Close enough to the tornado it
  * flips the car; a flip or a full damage meter wrecks it and ends the day.
+ * With a roll cage a flip costs heavy damage instead, once each time the
+ * tornado catches the car.
  * @param {GameState} state
  * @param {number} dt
  * @param {Tuning} tuning
@@ -391,6 +473,7 @@ export function step(state, steering, dt, tuning, roads) {
 function battered(state, dt, tuning) {
   let { damage, debrisClock, debrisStrikes } = state;
   let flipped = false;
+  let wrecked = false;
 
   // Hail falls from the storm's purple core, tornado or not.
   if (inHailCore(state.car, state.storm, tuning)) damage += tuning.hail.damagePerSecond * dt;
@@ -399,7 +482,11 @@ function battered(state, dt, tuning) {
     const miles = milesToFunnel(state);
     damage += windDamagePerSecond(miles, tuning) * dt;
     flipped = miles <= tuning.danger.flipMiles;
-
+    if (flipped && !state.flipped) {
+      const { flipDamage } = tuning.danger;
+      if (flipDamage === undefined) wrecked = true;
+      else damage += flipDamage;
+    }
   }
 
   // Debris hits in bursts: one strike each time the clock comes round, for as
@@ -418,10 +505,10 @@ function battered(state, dt, tuning) {
     debrisClock = 0;
   }
 
-  if (flipped || damage >= 1) {
-    return endDay({ ...state, damage: 1, debrisClock, debrisStrikes, wrecked: true }, tuning);
+  if (wrecked || damage >= 1) {
+    return endDay({ ...state, damage: 1, debrisClock, debrisStrikes, flipped, wrecked: true }, tuning);
   }
-  return { ...state, damage, debrisClock, debrisStrikes };
+  return { ...state, damage, debrisClock, debrisStrikes, flipped };
 }
 
 /**

@@ -210,6 +210,86 @@ export const tuning = {
     },
   ],
 
+  // The chase team and its vehicle. Their names show in the garage.
+  team: 'Team SquallLine',
+  vehicle: 'The Chaser',
+
+  // The parts the garage sells, in the order they are listed. Each part is
+  // bought once. Add a part by adding a block. Each part has:
+  //
+  // id: what a saved game remembers the part by. Never change one, or saved
+  //   games lose the part.
+  // name, price: what the garage calls it, and what it costs in dollars.
+  // does: what the garage says it does.
+  // needs: the id of a part that has to be bought first, or '' for none.
+  // picture: the picture file drawn on the vehicle once the part is owned.
+  // at: where on the vehicle the picture goes: 0 is the left or the top of
+  //   the vehicle's picture, 1 is the right or the bottom, 0.5 is the middle.
+  //
+  // Then what the part does to the game, with one or more of these. "Times"
+  // means multiply: 2 doubles a number, 0.5 halves it, 0 takes it away.
+  //
+  // hailDamageTimes: how much hail damage gets through.
+  // payTimes: how much more footage pays.
+  // speedTimes: how much faster the car drives.
+  // debrisDamageTimes: how much of each debris strike gets through.
+  // dangerRingTimes: how big the danger ring is.
+  // flipDamage: with this, a flip fills this much of the damage meter
+  //   instead of ending the day. 0.5 is half the meter.
+  parts: [
+    {
+      id: 'lexan',
+      name: 'Lexan windows',
+      price: 1500,
+      does: 'Hail no longer damages the vehicle.',
+      needs: '',
+      picture: 'art/part-lexan.png',
+      at: { x: 0.45, y: 0.3 },
+      hailDamageTimes: 0,
+    },
+    {
+      id: 'camera',
+      name: 'Better camera',
+      price: 2500,
+      does: 'Footage pays half as much again.',
+      needs: '',
+      picture: 'art/part-camera.png',
+      at: { x: 0.45, y: 0.08 },
+      payTimes: 1.5,
+    },
+    {
+      id: 'engine',
+      name: 'Bigger engine',
+      price: 2000,
+      does: 'The car drives a quarter faster.',
+      needs: '',
+      picture: 'art/part-engine.png',
+      at: { x: 0.85, y: 0.5 },
+      speedTimes: 1.25,
+    },
+    {
+      id: 'armour',
+      name: 'Steel armour',
+      price: 5000,
+      does: 'Debris does much less damage and the danger ring shrinks.',
+      needs: '',
+      picture: 'art/part-armour.png',
+      at: { x: 0.45, y: 0.62 },
+      debrisDamageTimes: 0.3,
+      dangerRingTimes: 0.6,
+    },
+    {
+      id: 'rollcage',
+      name: 'Roll cage and harnesses',
+      price: 4000,
+      does: 'A flip costs heavy damage instead of ending the day.',
+      needs: '',
+      picture: 'art/part-rollcage.png',
+      at: { x: 0.15, y: 0.3 },
+      flipDamage: 0.5,
+    },
+  ],
+
   // What every day's storm has in common.
   storm: {
     // How fast the storm travels, in miles each second. At 0.22 it crosses

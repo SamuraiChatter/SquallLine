@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildNetwork } from './roads.js';
-import { beginChase, dayTuning, freePlay, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, readSave, resume, runFinished, saveOf, step, strongest, toggleFilming, tornadoInFrame, windDamagePerSecond } from './rules.js';
+import { beginChase, buy, dayTuning, freePlay, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, readSave, resume, runFinished, saveOf, step, strongest, toggleFilming, tornadoInFrame, whyNotBuy, windDamagePerSecond } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
@@ -375,6 +375,15 @@ test('outside the debris zone nothing strikes', () => {
 const runTuning = {
   ...tuning,
   startingBalance: 50,
+  // One part for each thing a part can do, and one that needs another first.
+  parts: [
+    { id: 'windows', price: 100, hailDamageTimes: 0 },
+    { id: 'camera', price: 200, payTimes: 1.5 },
+    { id: 'engine', price: 300, speedTimes: 2 },
+    { id: 'armour', price: 400, debrisDamageTimes: 0.5, dangerRingTimes: 0.5 },
+    { id: 'cage', price: 500, flipDamage: 0.6 },
+    { id: 'spoiler', price: 10, needs: 'engine' },
+  ],
   days: [0, 1, 2].map((strength) => ({
     path: [{ x: 20, y: 20 }, { x: 30, y: 20 }],
     tornadoes: [{ start: 0.2, end: 0.8, strength }],
@@ -425,7 +434,15 @@ test('a run goes briefing, chase, summary for every day and ends on the final sc
     state = sitOut(state);
     assert.equal(state.dayOver, true);
     assert.equal(state.finished, false);
+    assert.equal(state.garage, false);
     state = nextDay(state, runTuning, roads);
+    // The garage comes between every summary and the next briefing, but not
+    // after the last day.
+    if (state.day < 3) {
+      assert.equal(state.garage, true);
+      state = nextDay(state, runTuning, roads);
+      assert.equal(state.garage, false);
+    }
   }
   assert.deepEqual(seen, [1, 2, 3]);
 });
@@ -433,7 +450,7 @@ test('a run goes briefing, chase, summary for every day and ends on the final sc
 test('a day with no earnings still moves on to the next', () => {
   const ended = sitOut(beginChase(newRun(runTuning, roads)));
   assert.equal(ended.money, 0);
-  const next = nextDay(ended, runTuning, roads);
+  const next = nextDay(nextDay(ended, runTuning, roads), runTuning, roads);
   assert.equal(next.day, 2);
   assert.equal(next.briefing, true);
 });
@@ -442,7 +459,7 @@ test('the next day starts fresh but keeps the balance', () => {
   const ended = headHome({ ...beginChase(newRun(runTuning, roads)), money: 300, damage: 0.25 }, dayTuning(runTuning, 1));
   // 50 in the bank, 300 earned, a quarter of the 400 repair cost.
   assert.equal(ended.balance, 250);
-  const next = nextDay(ended, runTuning, roads);
+  const next = nextDay(nextDay(ended, runTuning, roads), runTuning, roads);
   assert.equal(next.balance, 250);
   assert.equal(next.money, 0);
   assert.equal(next.damage, 0);
@@ -506,13 +523,13 @@ function playDay(state, money, damage = 0) {
 }
 
 test('a new save starts at day one with the starting balance and keeps the best', () => {
-  assert.deepEqual(newSave(runTuning), { day: 1, balance: 50, best: 0 });
-  assert.deepEqual(newSave(runTuning, 900), { day: 1, balance: 50, best: 900 });
+  assert.deepEqual(newSave(runTuning), { day: 1, balance: 50, best: 0, parts: [] });
+  assert.deepEqual(newSave(runTuning, 900), { day: 1, balance: 50, best: 900, parts: [] });
 });
 
 test('after a day the save holds the next day and the balance', () => {
   const ended = playDay(newRun(runTuning, roads, 700), 300);
-  assert.deepEqual(saveOf(ended, runTuning), { day: 2, balance: 350, best: 700 });
+  assert.deepEqual(saveOf(ended, runTuning), { day: 2, balance: 350, best: 700, parts: [] });
 });
 
 test('a save read back resumes at the next briefing with the same balance', () => {
@@ -530,7 +547,7 @@ test('a save read back resumes at the next briefing with the same balance', () =
 test('the save after the last day is of a finished run, with the best brought up to date', () => {
   const ended = playDay({ ...newRun(runTuning, roads, 700), day: 3 }, 1000);
   const save = saveOf(ended, runTuning);
-  assert.deepEqual(save, { day: 4, balance: 1050, best: 1050 });
+  assert.deepEqual(save, { day: 4, balance: 1050, best: 1050, parts: [] });
   assert.equal(runFinished(save, runTuning), true);
   assert.equal(runFinished({ ...save, day: 3 }, runTuning), false);
   // A lower final balance leaves the best alone.
@@ -551,14 +568,16 @@ test('a missing or damaged save is turned away', () => {
 });
 
 test('a save from when there were more days counts as a finished run', () => {
-  assert.deepEqual(readSave('{"day":9,"balance":10,"best":20}', runTuning), { day: 4, balance: 10, best: 20 });
+  assert.deepEqual(readSave('{"day":9,"balance":10,"best":20}', runTuning), { day: 4, balance: 10, best: 20, parts: [] });
 });
 
 test('free play replays any day and leaves the recorded score alone', () => {
-  const save = { day: 4, balance: 1050, best: 2000 };
+  const save = { day: 4, balance: 1050, best: 2000, parts: ['engine'] };
   const state = freePlay(save, 2, runTuning, roads);
   assert.equal(state.day, 2);
   assert.equal(state.briefing, true);
+  // With the vehicle as it stands.
+  assert.deepEqual(state.parts, ['engine']);
   const ended = playDay(state, 400, 0.5);
   assert.equal(ended.dayOver, true);
   assert.equal(ended.money, 400);
@@ -567,4 +586,151 @@ test('free play replays any day and leaves the recorded score alone', () => {
   assert.equal(ended.best, 2000);
   // And it does not lead on to the next day or a second final score.
   assert.equal(nextDay(ended, runTuning, roads), ended);
+});
+
+/**
+ * The garage after day one, with this much in the bank.
+ * @param {number} balance
+ * @param {string[]} [parts] Parts already on the vehicle.
+ */
+function inGarage(balance, parts = []) {
+  const ended = { ...playDay(newRun(runTuning, roads), 0), balance, parts };
+  return nextDay(ended, runTuning, roads);
+}
+
+test('buying a part takes its price off the balance and puts it on the vehicle', () => {
+  const bought = buy(inGarage(1000), 'camera', runTuning);
+  assert.equal(bought.balance, 800);
+  assert.deepEqual(bought.parts, ['camera']);
+});
+
+test('a part is bought only once', () => {
+  const once = buy(inGarage(1000), 'camera', runTuning);
+  assert.equal(whyNotBuy(once, runTuning.parts[1]), 'owned');
+  assert.equal(buy(once, 'camera', runTuning), once);
+});
+
+test('a part that costs more than the balance cannot be bought', () => {
+  const poor = inGarage(199);
+  assert.equal(whyNotBuy(poor, runTuning.parts[1]), 'money');
+  assert.equal(buy(poor, 'camera', runTuning), poor);
+  // Exactly enough is enough.
+  assert.equal(buy(inGarage(200), 'camera', runTuning).balance, 0);
+});
+
+test('a part that needs another cannot be bought until the other is owned', () => {
+  const garage = inGarage(1000);
+  assert.equal(whyNotBuy(garage, runTuning.parts[5]), 'needs');
+  assert.equal(buy(garage, 'spoiler', runTuning), garage);
+  assert.deepEqual(buy(buy(garage, 'engine', runTuning), 'spoiler', runTuning).parts, ['engine', 'spoiler']);
+});
+
+test('parts are only bought in the garage, and only parts the garage sells', () => {
+  const summary = { ...playDay(newRun(runTuning, roads), 0), balance: 1000 };
+  assert.equal(buy(summary, 'camera', runTuning), summary);
+  const garage = inGarage(1000);
+  assert.equal(buy(garage, 'rocket', runTuning), garage);
+});
+
+test('the parts and what is left of the balance go on to the next day and into the save', () => {
+  const bought = buy(inGarage(1000), 'engine', runTuning);
+  assert.deepEqual(saveOf(bought, runTuning), { day: 2, balance: 700, best: 0, parts: ['engine'] });
+  const next = nextDay(bought, runTuning, roads);
+  assert.equal(next.day, 2);
+  assert.equal(next.briefing, true);
+  assert.equal(next.garage, false);
+  assert.equal(next.balance, 700);
+  assert.deepEqual(next.parts, ['engine']);
+});
+
+test('a save keeps its parts, less any the garage no longer sells', () => {
+  const text = JSON.stringify({ day: 2, balance: 10, best: 0, parts: ['cage', 'rocket', 'engine', 'engine', 7] });
+  assert.deepEqual(readSave(text, runTuning)?.parts, ['engine', 'cage']);
+  assert.deepEqual(readSave('{"day":2,"balance":10,"best":0,"parts":"engine"}', runTuning)?.parts, []);
+});
+
+test('with no parts the day plays by the plain numbers', () => {
+  const plain = dayTuning(runTuning, 1);
+  assert.equal(plain.carMilesPerSecond, tuning.carMilesPerSecond);
+  assert.deepEqual(plain.footage, runTuning.days[0].footage);
+  assert.equal(plain.danger.ringMiles, tuning.danger.ringMiles);
+  assert.equal(plain.danger.flipDamage, undefined);
+  assert.deepEqual(plain.debris, tuning.debris);
+  assert.deepEqual(plain.hail, tuning.hail);
+});
+
+// A storm that sits still with a tornado on the ground all day. Its funnel
+// is 2.6 miles south-west of its middle, so this one's is at the crossroads
+// where the car starts, and its hail core is far away.
+/** @param {string[]} parts @param {number} x Where the funnel is, in miles east of the car. */
+const parked = (parts, x) => ({
+  ...dayTuning(runTuning, 1, parts),
+  storm: { path: [{ x: x + 2.6, y: 2.6 }, { x: x + 2.6, y: 2.6001 }], milesPerSecond: 0, hookLead: 0.1, tornadoes: [{ start: 0, end: 1 }] },
+});
+
+test('with the windows, sitting in the hail core does no damage', () => {
+  // The hail core is just north-east of the storm's middle.
+  const inCore = { carStart: { x: 0, y: 0 }, storm: { path: [{ x: -0.3, y: -0.3 }, { x: -0.3, y: -0.2999 }], milesPerSecond: 0, hookLead: 0.1, tornadoes: [] } };
+  const bare = { ...dayTuning(runTuning, 1), ...inCore };
+  const glazed = { ...dayTuning(runTuning, 1, ['windows']), ...inCore };
+  assert.ok(step(newGame(bare, roads), still, 1, bare, roads).damage > 0);
+  assert.equal(step(newGame(glazed, roads), still, 1, glazed, roads).damage, 0);
+});
+
+test('with the camera, footage pays more', () => {
+  assert.equal(payPerSecond(0, dayTuning(runTuning, 1, ['camera'])), 1.5 * payPerSecond(0, dayTuning(runTuning, 1)));
+  assert.equal(payPerSecond(10, dayTuning(runTuning, 1, ['camera'])), 1.5 * payPerSecond(10, dayTuning(runTuning, 1)));
+});
+
+test('with the engine, the car drives faster', () => {
+  const fast = dayTuning(runTuning, 1, ['engine']);
+  assert.deepEqual(step(newGame(fast, roads), { x: 1, y: 0 }, 1, fast, roads).car, { x: 4, y: 0 });
+});
+
+test('with the armour, debris does less damage and the danger ring is smaller', () => {
+  const armoured = dayTuning(runTuning, 1, ['armour']);
+  assert.equal(armoured.danger.ringMiles, tuning.danger.ringMiles / 2);
+  // Three miles out is inside the plain ring and outside the armoured one.
+  assert.ok(windDamagePerSecond(3, dayTuning(runTuning, 1)) > 0);
+  assert.equal(windDamagePerSecond(3, armoured), 0);
+
+  // Close in, 0.8 miles from the funnel: one debris strike in half a second.
+  const hit = (/** @type {string[]} */ parts) => {
+    const day = { ...parked(parts, 0.8), danger: { ...tuning.danger, windDamageAtTornado: 0 } };
+    return step(newGame(day, roads), still, 0.5, day, roads).damage;
+  };
+  assert.ok(Math.abs(hit([]) - 0.1) < 1e-9);
+  assert.ok(Math.abs(hit(['armour']) - 0.05) < 1e-9);
+});
+
+test('without the roll cage a flip wrecks the car and ends the day', () => {
+  const day = parked([], 0.2);
+  const state = step(newGame(day, roads), still, 0.01, day, roads);
+  assert.equal(state.wrecked, true);
+  assert.equal(state.dayOver, true);
+});
+
+test('with the roll cage a flip costs heavy damage and the day runs on', () => {
+  const caged = parked(['cage'], 0.2);
+  const day = { ...caged, danger: { ...caged.danger, windDamageAtTornado: 0 }, debris: { ...caged.debris, damagePerStrike: 0 } };
+  let state = step(newGame(day, roads), still, 0.01, day, roads);
+  assert.equal(state.dayOver, false);
+  assert.equal(state.wrecked, false);
+  assert.equal(state.flipped, true);
+  assert.equal(state.damage, 0.6);
+  // Lying there costs nothing more for the same flip.
+  state = step(state, still, 1, day, roads);
+  assert.equal(state.damage, 0.6);
+});
+
+test('a second flip on top of the first wrecks even a car with a roll cage', () => {
+  const caged = parked(['cage'], 0.2);
+  const day = { ...caged, danger: { ...caged.danger, windDamageAtTornado: 0 }, debris: { ...caged.debris, damagePerStrike: 0 } };
+  const flipped = step(newGame(day, roads), still, 0.01, day, roads);
+  // Out of the tornado, then caught again.
+  const away = step({ ...flipped, car: { x: 5, y: 0 } }, still, 0.01, day, roads);
+  assert.equal(away.flipped, false);
+  const again = step({ ...away, car: { x: 0, y: 0 } }, still, 0.01, day, roads);
+  assert.equal(again.wrecked, true);
+  assert.equal(again.dayOver, true);
 });

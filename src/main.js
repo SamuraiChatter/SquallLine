@@ -3,9 +3,10 @@
 
 import { tuning } from '../tuning.js';
 import { draw } from './draw.js';
+import { drawGarage } from './garage.js';
 import { loadMap } from './map.js';
 import { drawAbout, drawBriefing, drawDamage, drawDayChoice, drawFinalScore, drawMoney, drawNewGameCheck, drawPause, drawSummary, drawTitle, drawTrialNote } from './hud.js';
-import { beginChase, dayTuning, freePlay, headHome, newRun, newSave, nextDay, readSave, resume, runFinished, saveKey, saveOf, step, strongest, toggleFilming } from './rules.js';
+import { beginChase, buy, dayTuning, freePlay, headHome, newRun, newSave, nextDay, readSave, resume, runFinished, saveKey, saveOf, step, strongest, toggleFilming } from './rules.js';
 import { designKey, readStorm } from './storms.js';
 import { drawWindshield } from './windshield.js';
 
@@ -90,7 +91,8 @@ let screen = trial ? 'game' : 'title';
  */
 function play(day) {
   state = day;
-  game = dayTuning(run, state.day);
+  game = dayTuning(run, state.day, state.parts);
+  chosen = 0;
   strikesSeen = 0;
   wholeTerritory = false;
   paused = false;
@@ -136,6 +138,8 @@ const held = new Set();
 let wholeTerritory = false;
 // True while the pause screen is up. Nothing moves until it goes.
 let paused = false;
+// Which part is picked out in the garage, counting from 0.
+let chosen = 0;
 
 addEventListener('keydown', (event) => {
   // Leave browser shortcuts such as Alt+Left (go back) alone.
@@ -155,6 +159,16 @@ addEventListener('keydown', (event) => {
   if (key === 'h' && paused) {
     state = headHome(state, game);
     paused = false;
+  }
+  // In the garage, up and down choose a part and B buys it. Each purchase is
+  // saved at once.
+  if (state.garage) {
+    if (key === 'arrowup') chosen = Math.max(0, chosen - 1);
+    if (key === 'arrowdown') chosen = Math.min(run.parts.length - 1, chosen + 1);
+    if (key === 'b' && !event.repeat) {
+      state = buy(state, run.parts[chosen].id, run);
+      keep(saveOf(state, run));
+    }
   }
   // Enter moves on from the briefing, the day summary and the final score.
   // In the middle of a chase it does nothing.
@@ -193,7 +207,7 @@ const pressed = (key) => (held.has(key) ? 1 : 0);
 // Behind the title screen sits the day the player would carry on with.
 let state = trial ? beginChase(newRun(run, map.roads)) : resume(runFinished(saved, run) ? newSave(run) : saved, run, map.roads);
 // The numbers today plays by.
-let game = dayTuning(run, state.day);
+let game = dayTuning(run, state.day, state.parts);
 // How many debris strikes have been shown, and when the last one landed.
 let strikesSeen = 0;
 let struckAt = -Infinity;
@@ -232,6 +246,7 @@ function frame(now) {
   else if (screen === 'free play') drawDayChoice(ctx, run.days.length);
   else if (state.briefing) drawBriefing(ctx, state, game, run.days.length);
   else if (state.finished) drawFinalScore(ctx, state);
+  else if (state.garage) drawGarage(ctx, state, run, chosen);
   else if (state.dayOver) drawSummary(ctx, state, trial);
   else if (paused) drawPause(ctx);
   requestAnimationFrame(frame);
