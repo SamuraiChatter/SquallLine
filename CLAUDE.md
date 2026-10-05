@@ -27,6 +27,8 @@ GitHub Pages publishes `main` at https://samuraichatter.github.io/SquallLine/.
 - `src/rules.js` holds the rules: plain functions from one game state to the
   next. They never touch the canvas or the page, so they run under Node, which
   is where the tests check them.
+- `src/roads.js` holds the road network and how the car drives along it. Like
+  the rules, it never touches the canvas or the page, and has its own tests.
 - `src/draw.js` paints the map view, `src/windshield.js` the filming view, and
   `src/hud.js` the money, damage meter, pause screen and day summary over
   both.

@@ -9,6 +9,11 @@ export const tuning = {
   // this is game speed, so a chase does not take all afternoon.
   carMilesPerSecond: 0.4,
 
+  // Where the car starts each day, as so many miles east (x) and north (y)
+  // of the middle of the territory. A minus number means west or south. The
+  // car is put on the road nearest to this spot. This one is in Norman.
+  carStart: { x: 3.4, y: -1.9 },
+
   // How many miles of map fit across the screen. Smaller zooms in.
   viewMiles: 15,
 

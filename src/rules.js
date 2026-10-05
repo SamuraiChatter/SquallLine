@@ -2,6 +2,8 @@
 // the game as it is next. Nothing in here touches the canvas or the page, so
 // the rules also run under Node, which is where the tests check them.
 
+import { drive, nearestSpot, placeOf } from './roads.js';
+
 /**
  * A place on the map, in miles east and north of the middle of the territory.
  * @typedef {{ x: number, y: number }} Point
@@ -26,6 +28,8 @@
  * The whole game at one moment.
  * @typedef {object} GameState
  * @property {Point} car
+ * @property {import('./roads.js').RoadSpot} road Where the car is on the
+ *   roads. The car never leaves them.
  * @property {Storm} storm
  * @property {boolean} filming True while the car is pulled over to film.
  * @property {number} camera Which way the camera points, in degrees round
@@ -50,15 +54,20 @@
  * @typedef {{ x: number, y: number }} Steering
  */
 
-/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'territoryMilesWide' | 'territoryMilesTall' | 'storm' | 'footage' | 'danger' | 'debris' | 'hail'> & { camera: Pick<typeof import('../tuning.js').tuning.camera, 'viewfinderDegrees' | 'panDegreesPerSecond'> }} Tuning */
+/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'carStart' | 'storm' | 'footage' | 'danger' | 'debris' | 'hail'> & { camera: Pick<typeof import('../tuning.js').tuning.camera, 'viewfinderDegrees' | 'panDegreesPerSecond'> }} Tuning */
+
+/** @typedef {import('./roads.js').RoadNetwork} RoadNetwork */
 
 /**
  * @param {Tuning} tuning
+ * @param {RoadNetwork} roads
  * @returns {GameState}
  */
-export function newGame(tuning) {
+export function newGame(tuning, roads) {
+  const road = nearestSpot(roads, tuning.carStart);
   return {
-    car: { x: 0, y: 0 },
+    car: placeOf(roads, road),
+    road,
     storm: stormAt(0, tuning.storm),
     filming: false,
     camera: 0,
@@ -122,7 +131,7 @@ export function milesToFunnel(state) {
  * @returns {GameState}
  */
 export function toggleFilming(state) {
-  return { ...state, filming: !state.filming, camera: bearingToFunnel(state) };
+  return { ...state, filming: !state.filming, camera: bearingToFunnel(state), road: { ...state.road, moving: false } };
 }
 
 /**
@@ -161,16 +170,17 @@ function bearingToFunnel(state) {
  * @param {Steering} steering
  * @param {number} dt Seconds since the last step.
  * @param {Tuning} tuning
+ * @param {RoadNetwork} roads
  * @returns {GameState}
  */
-export function step(state, steering, dt, tuning) {
+export function step(state, steering, dt, tuning, roads) {
   if (state.dayOver) return state;
 
   const storm = stormAt(state.storm.miles + tuning.storm.milesPerSecond * dt, tuning.storm);
   // The storm has nothing left to film, so the day is done.
   if (storm.spent) return endDay({ ...state, storm }, tuning);
 
-  return battered(driveOrFilm({ ...state, storm }, steering, dt, tuning), dt, tuning);
+  return battered(driveOrFilm({ ...state, storm }, steering, dt, tuning, roads), dt, tuning);
 }
 
 /**
@@ -274,9 +284,10 @@ export function windDamagePerSecond(miles, tuning) {
  * @param {Steering} steering
  * @param {number} dt
  * @param {Tuning} tuning
+ * @param {RoadNetwork} roads
  * @returns {GameState}
  */
-function driveOrFilm(state, steering, dt, tuning) {
+function driveOrFilm(state, steering, dt, tuning, roads) {
   const { storm } = state;
   if (state.filming) {
     // Pulled over: the car stays put, left and right pan the camera, and the
@@ -291,21 +302,9 @@ function driveOrFilm(state, steering, dt, tuning) {
     };
   }
 
-  // Two arrows at once share the speed, so a diagonal is no faster.
-  const miles = (tuning.carMilesPerSecond * dt) / (Math.hypot(steering.x, steering.y) || 1);
-  /**
-   * @param {number} n
-   * @param {number} edge
-   */
-  const inside = (n, edge) => Math.max(-edge, Math.min(edge, n));
-  return {
-    ...state,
-    car: {
-      x: inside(state.car.x + steering.x * miles, tuning.territoryMilesWide / 2),
-      y: inside(state.car.y + steering.y * miles, tuning.territoryMilesTall / 2),
-    },
-    storm,
-  };
+  const road = drive(roads, state.road, steering, tuning.carMilesPerSecond * dt);
+  // A car that has not been driven stays exactly where it was.
+  return road === state.road ? state : { ...state, road, car: placeOf(roads, road) };
 }
 
 /**
