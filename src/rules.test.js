@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { buildNetwork } from './roads.js';
 import { hailCore, headHome, inHailCore, newGame, payPerSecond, step, toggleFilming, tornadoInFrame, windDamagePerSecond } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
   carMilesPerSecond: 2,
-  territoryMilesWide: 60,
-  territoryMilesTall: 40,
+  carStart: { x: 0, y: 0 },
   storm: { path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], milesPerSecond: 1, hookLead: 0.1, tornadoes: [] },
   camera: { viewfinderDegrees: 20, panDegreesPerSecond: 30 },
   footage: { ringMiles: 10, payAtEdge: 10, payAtTornado: 110 },
@@ -15,34 +15,38 @@ const tuning = {
   hail: { coreMilesLong: 2, coreMilesWide: 1, damagePerSecond: 0.2 },
 };
 
-test('a new game starts with the car in the middle of the territory', () => {
-  assert.deepEqual(newGame(tuning).car, { x: 0, y: 0 });
+// Two roads that cross in the middle of the territory: one from 30 miles west
+// to 30 miles east, the other from 20 miles south to 20 miles north. How the
+// car picks its way along roads is tested in roads.test.js.
+const roads = buildNetwork([
+  [{ x: -30, y: 0 }, { x: 0, y: 0 }, { x: 30, y: 0 }],
+  [{ x: 0, y: -20 }, { x: 0, y: 0 }, { x: 0, y: 20 }],
+]);
+
+test('a new game starts with the car on the road nearest its start point', () => {
+  assert.deepEqual(newGame(tuning, roads).car, { x: 0, y: 0 });
+  assert.deepEqual(newGame({ ...tuning, carStart: { x: 28, y: 3 } }, roads).car, { x: 30, y: 0 });
 });
 
 test('holding north drives the car north', () => {
-  const state = step(newGame(tuning), { x: 0, y: 1 }, 1.5, tuning);
+  const state = step(newGame(tuning, roads), { x: 0, y: 1 }, 1.5, tuning, roads);
   assert.deepEqual(state.car, { x: 0, y: 3 });
 });
 
 test('holding south, east or west drives the car that way', () => {
-  assert.deepEqual(step(newGame(tuning), { x: 0, y: -1 }, 1, tuning).car, { x: 0, y: -2 });
-  assert.deepEqual(step(newGame(tuning), { x: 1, y: 0 }, 1, tuning).car, { x: 2, y: 0 });
-  assert.deepEqual(step(newGame(tuning), { x: -1, y: 0 }, 1, tuning).car, { x: -2, y: 0 });
+  assert.deepEqual(step(newGame(tuning, roads), { x: 0, y: -1 }, 1, tuning, roads).car, { x: 0, y: -2 });
+  assert.deepEqual(step(newGame(tuning, roads), { x: 1, y: 0 }, 1, tuning, roads).car, { x: 2, y: 0 });
+  assert.deepEqual(step(newGame(tuning, roads), { x: -1, y: 0 }, 1, tuning, roads).car, { x: -2, y: 0 });
 });
 
 test('letting go stops the car where it is', () => {
-  const driven = step(newGame(tuning), { x: 1, y: 0 }, 1, tuning);
-  assert.deepEqual(step(driven, { x: 0, y: 0 }, 5, tuning).car, { x: 2, y: 0 });
+  const driven = step(newGame(tuning, roads), { x: 1, y: 0 }, 1, tuning, roads);
+  assert.deepEqual(step(driven, { x: 0, y: 0 }, 5, tuning, roads).car, { x: 2, y: 0 });
 });
 
-test('the car cannot leave the territory', () => {
-  const far = step(newGame(tuning), { x: 1, y: -1 }, 100, tuning);
-  assert.deepEqual(far.car, { x: 30, y: -20 });
-});
-
-test('driving on a diagonal is no faster than driving straight', () => {
-  const { car } = step(newGame(tuning), { x: 1, y: 1 }, 1, tuning);
-  assert.ok(Math.abs(Math.hypot(car.x, car.y) - 2) < 1e-9);
+test('the car cannot drive past the end of the road', () => {
+  const far = step(newGame(tuning, roads), { x: 1, y: 0 }, 100, tuning, roads);
+  assert.deepEqual(far.car, { x: 30, y: 0 });
 });
 
 // A storm path with easy numbers: 10 miles east, then 10 miles north, at one
@@ -65,13 +69,13 @@ const still = { x: 0, y: 0 };
  * @param {typeof stormTuning} [withTuning]
  */
 function stormAfter(seconds, withTuning = stormTuning) {
-  let state = newGame(withTuning);
-  for (let i = 0; i < seconds * 4; i++) state = step(state, still, 0.25, withTuning);
+  let state = newGame(withTuning, roads);
+  for (let i = 0; i < seconds * 4; i++) state = step(state, still, 0.25, withTuning, roads);
   return state.storm;
 }
 
 test('the storm starts at the beginning of its path', () => {
-  const { x, y } = newGame(stormTuning).storm;
+  const { x, y } = newGame(stormTuning, roads).storm;
   assert.deepEqual({ x, y }, { x: 0, y: 0 });
 });
 
@@ -121,9 +125,9 @@ test('the storm makes as many tornadoes as the tuning lists', () => {
     },
   };
   let touchdowns = 0;
-  let state = newGame(three);
+  let state = newGame(three, roads);
   for (let i = 0; i < 100; i++) {
-    const next = step(state, still, 0.25, three);
+    const next = step(state, still, 0.25, three, roads);
     if (state.storm.tornado === 0 && next.storm.tornado > 0) touchdowns++;
     state = next;
   }
@@ -139,8 +143,8 @@ const filmTuning = stormTuning;
  * @param {number} [miles]
  */
 function parkedSouthOfTornado(miles = 5) {
-  let state = newGame(filmTuning);
-  for (let i = 0; i < 44; i++) state = step(state, still, 0.25, filmTuning);
+  let state = newGame(filmTuning, roads);
+  for (let i = 0; i < 44; i++) state = step(state, still, 0.25, filmTuning, roads);
   // The storm started on top of the car, so wipe the hail damage from that.
   return { ...state, car: { x: state.storm.funnel.x, y: state.storm.funnel.y - miles }, damage: 0 };
 }
@@ -157,13 +161,13 @@ test('pulling over a second time goes back to driving', () => {
 
 test('the arrows do not move the car while filming', () => {
   const parked = toggleFilming(parkedSouthOfTornado());
-  assert.deepEqual(step(parked, { x: 1, y: 1 }, 1, filmTuning).car, parked.car);
+  assert.deepEqual(step(parked, { x: 1, y: 1 }, 1, filmTuning, roads).car, parked.car);
 });
 
 test('left and right pan the camera', () => {
   const parked = toggleFilming(parkedSouthOfTornado());
-  assert.equal(step(parked, { x: 1, y: 0 }, 1, filmTuning).camera, 30);
-  assert.equal(step(parked, { x: -1, y: 0 }, 1, filmTuning).camera, 330);
+  assert.equal(step(parked, { x: 1, y: 0 }, 1, filmTuning, roads).camera, 30);
+  assert.equal(step(parked, { x: -1, y: 0 }, 1, filmTuning, roads).camera, 330);
 });
 
 test('the tornado is in frame only inside the viewfinder box', () => {
@@ -174,26 +178,26 @@ test('the tornado is in frame only inside the viewfinder box', () => {
 });
 
 test('with no tornado on the ground, nothing is in frame', () => {
-  assert.equal(tornadoInFrame(toggleFilming(newGame(filmTuning)), filmTuning), false);
+  assert.equal(tornadoInFrame(toggleFilming(newGame(filmTuning, roads)), filmTuning), false);
 });
 
 test('footage counts while the tornado is in the box', () => {
   const parked = toggleFilming(parkedSouthOfTornado());
-  assert.equal(step(parked, still, 0.5, filmTuning).footage, 0.5);
+  assert.equal(step(parked, still, 0.5, filmTuning, roads).footage, 0.5);
 });
 
 test('footage does not count once the camera has panned off the tornado', () => {
   const parked = { ...toggleFilming(parkedSouthOfTornado()), camera: 40 };
-  assert.equal(step(parked, still, 0.5, filmTuning).footage, 0);
+  assert.equal(step(parked, still, 0.5, filmTuning, roads).footage, 0);
 });
 
 test('footage does not count while driving', () => {
-  assert.equal(step(parkedSouthOfTornado(), still, 0.5, filmTuning).footage, 0);
+  assert.equal(step(parkedSouthOfTornado(), still, 0.5, filmTuning, roads).footage, 0);
 });
 
 test('the storm keeps moving while the player films', () => {
   const parked = toggleFilming(parkedSouthOfTornado());
-  assert.equal(step(parked, still, 1, filmTuning).storm.miles, parked.storm.miles + 1);
+  assert.equal(step(parked, still, 1, filmTuning, roads).storm.miles, parked.storm.miles + 1);
 });
 
 // Pay. The footage ring is 10 miles out; a second of footage pays 10 at its
@@ -211,23 +215,23 @@ test('footage pays more the closer the car is', () => {
 
 test('filming from inside the ring earns money', () => {
   const parked = toggleFilming(parkedSouthOfTornado(5));
-  assert.ok(step(parked, still, 0.5, filmTuning).money > 0);
+  assert.ok(step(parked, still, 0.5, filmTuning, roads).money > 0);
 });
 
 test('filming from outside the ring earns nothing', () => {
   const parked = toggleFilming(parkedSouthOfTornado(12));
-  assert.equal(step(parked, still, 0.5, filmTuning).money, 0);
+  assert.equal(step(parked, still, 0.5, filmTuning, roads).money, 0);
 });
 
 test('the same seconds pay more from half way into the ring than from its edge', () => {
-  const near = step(toggleFilming(parkedSouthOfTornado(5)), still, 0.5, filmTuning).money;
-  const far = step(toggleFilming(parkedSouthOfTornado(9)), still, 0.5, filmTuning).money;
+  const near = step(toggleFilming(parkedSouthOfTornado(5)), still, 0.5, filmTuning, roads).money;
+  const far = step(toggleFilming(parkedSouthOfTornado(9)), still, 0.5, filmTuning, roads).money;
   assert.ok(near > far && far > 0);
 });
 
 test('the day ends when the last tornado dies, and the earnings join the balance', () => {
   let state = { ...parkedSouthOfTornado(), money: 50 };
-  for (let i = 0; i < 20; i++) state = step(state, still, 0.25, filmTuning);
+  for (let i = 0; i < 20; i++) state = step(state, still, 0.25, filmTuning, roads);
   assert.equal(state.dayOver, true);
   assert.equal(state.balance, 50);
 });
@@ -240,7 +244,7 @@ test('heading home ends the day early with the same sums', () => {
 
 test('once the day is over nothing moves', () => {
   const done = headHome(parkedSouthOfTornado(), filmTuning);
-  assert.deepEqual(step(done, { x: 1, y: 1 }, 5, filmTuning), done);
+  assert.deepEqual(step(done, { x: 1, y: 1 }, 5, filmTuning, roads), done);
 });
 
 // Damage. The danger ring is 4 miles out. Wind damage climbs steeply from
@@ -258,34 +262,34 @@ test('wind damage climbs steeply toward the tornado', () => {
 });
 
 test('outside the danger ring the damage meter does not move', () => {
-  assert.equal(step(parkedSouthOfTornado(5), still, 0.25, filmTuning).damage, 0);
+  assert.equal(step(parkedSouthOfTornado(5), still, 0.25, filmTuning, roads).damage, 0);
 });
 
 test('inside the danger ring the meter fills faster the closer the car is', () => {
-  const near = step(parkedSouthOfTornado(1), still, 0.25, filmTuning).damage;
-  const far = step(parkedSouthOfTornado(3), still, 0.25, filmTuning).damage;
+  const near = step(parkedSouthOfTornado(1), still, 0.25, filmTuning, roads).damage;
+  const far = step(parkedSouthOfTornado(3), still, 0.25, filmTuning, roads).damage;
   assert.ok(near > far && far > 0);
 });
 
 test('damage applies while filming too', () => {
   const filming = toggleFilming(parkedSouthOfTornado(1));
-  assert.ok(step(filming, still, 0.25, filmTuning).damage > 0);
+  assert.ok(step(filming, still, 0.25, filmTuning, roads).damage > 0);
 });
 
 test('with no tornado on the ground there is no damage', () => {
-  const calm = newGame(filmTuning);
+  const calm = newGame(filmTuning, roads);
   const atFunnel = { ...calm, car: { ...calm.storm.funnel } };
-  assert.equal(step(atFunnel, still, 0.25, filmTuning).damage, 0);
+  assert.equal(step(atFunnel, still, 0.25, filmTuning, roads).damage, 0);
 });
 
 test('driving into the tornado flips the car and ends the day', () => {
-  const state = step(parkedSouthOfTornado(0), still, 0.25, filmTuning);
+  const state = step(parkedSouthOfTornado(0), still, 0.25, filmTuning, roads);
   assert.equal(state.wrecked, true);
   assert.equal(state.dayOver, true);
 });
 
 test('a full damage meter wrecks the car and ends the day', () => {
-  const state = step({ ...parkedSouthOfTornado(1), damage: 0.99 }, still, 0.25, filmTuning);
+  const state = step({ ...parkedSouthOfTornado(1), damage: 0.99 }, still, 0.25, filmTuning, roads);
   assert.equal(state.wrecked, true);
   assert.equal(state.dayOver, true);
 });
@@ -297,7 +301,7 @@ test('the repair bill is in proportion to the damage', () => {
 });
 
 test('a wreck still sells its footage, and the balance never goes below zero', () => {
-  const state = step({ ...parkedSouthOfTornado(0), money: 300 }, still, 0.25, filmTuning);
+  const state = step({ ...parkedSouthOfTornado(0), money: 300 }, still, 0.25, filmTuning, roads);
   assert.equal(state.repairBill, 400);
   assert.equal(state.balance, 0);
 });
@@ -321,12 +325,12 @@ const stillStorm = { ...filmTuning, storm: { ...filmTuning.storm, milesPerSecond
  * @param {typeof filmTuning} withTuning
  */
 function after(state, seconds, withTuning) {
-  for (let i = 0; i < seconds * 4; i++) state = step(state, still, 0.25, withTuning);
+  for (let i = 0; i < seconds * 4; i++) state = step(state, still, 0.25, withTuning, roads);
   return state;
 }
 
 test('the hail core is the long purple shape in the middle of the storm', () => {
-  const { storm } = newGame(filmTuning);
+  const { storm } = newGame(filmTuning, roads);
   const core = hailCore(storm, filmTuning);
   assert.equal(inHailCore({ x: core.x, y: core.y }, storm, filmTuning), true);
   // 1.5 miles along its length is inside; 1.5 miles across it is not.
@@ -335,14 +339,14 @@ test('the hail core is the long purple shape in the middle of the storm', () => 
 });
 
 test('parking in the purple core raises the damage meter', () => {
-  const game = newGame(stillStorm);
+  const game = newGame(stillStorm, roads);
   const core = hailCore(game.storm, stillStorm);
   const state = after({ ...game, car: { x: core.x, y: core.y } }, 0.5, stillStorm);
   assert.ok(Math.abs(state.damage - 0.1) < 1e-9);
 });
 
 test('parking in the red or yellow, outside the core, does no damage', () => {
-  const game = newGame(stillStorm);
+  const game = newGame(stillStorm, roads);
   const core = hailCore(game.storm, stillStorm);
   const state = after({ ...game, car: { x: core.x - 1.06, y: core.y + 1.06 } }, 0.5, stillStorm);
   assert.equal(state.damage, 0);

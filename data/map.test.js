@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 import { test } from 'node:test';
+import { milesFrom, tierOf } from '../src/map.js';
+import { buildNetwork, drive, nearestSpot } from '../src/roads.js';
 
 const file = new URL('./map.json', import.meta.url);
 const map = JSON.parse(readFileSync(file, 'utf8'));
@@ -45,4 +47,52 @@ test('no point lies outside the territory', () => {
 
 test('the map file carries the OpenStreetMap credit', () => {
   assert.match(map.credit, /OpenStreetMap contributors/);
+});
+
+// The roads as the game drives them.
+const toMiles = milesFrom(map.bounds);
+const network = buildNetwork(
+  map.roads
+    .filter((/** @type {{ class: string }} */ road) => tierOf(road.class) >= 0)
+    .map((/** @type {{ points: number[][] }} */ road) => road.points.map(([lon, lat]) => toMiles(lon, lat))),
+);
+
+/**
+ * The point of the network nearest a town.
+ * @param {string} name
+ */
+function pointNear(name) {
+  const town = map.places.find((/** @type {{ name: string }} */ place) => place.name === name);
+  return nearestSpot(network, toMiles(town.lon, town.lat)).to;
+}
+
+test('the car can be driven from Norman to El Reno with the arrow keys alone', () => {
+  const start = pointNear('Norman');
+  const end = pointNear('El Reno');
+
+  // Find a route, working outward from El Reno: each point remembers the next
+  // point on the way there.
+  const next = new Map([[end, end]]);
+  const queue = [end];
+  for (const point of queue) {
+    for (const way of network.ways[point]) {
+      if (next.has(way)) continue;
+      next.set(way, point);
+      queue.push(way);
+    }
+  }
+  assert.ok(next.has(start), 'no roads join Norman to El Reno');
+
+  // Drive it one point at a time. At each point some arrow, or pair of
+  // arrows, has to take the car to the next one.
+  const arrows = [-1, 0, 1].flatMap((x) => [-1, 0, 1].map((y) => ({ x, y }))).filter(({ x, y }) => x || y);
+  let spot = { from: start, to: start, miles: 0, moving: false };
+  while (spot.to !== end) {
+    const target = /** @type {number} */ (next.get(spot.to));
+    const miles = Math.hypot(network.xs[target] - network.xs[spot.to], network.ys[target] - network.ys[spot.to]);
+    const tries = arrows.map((arrow) => drive(network, spot, arrow, miles));
+    const arrived = tries.find((tried) => tried.to === target && tried.miles >= miles);
+    assert.ok(arrived, `no arrow drives on from ${network.xs[spot.to]}, ${network.ys[spot.to]}`);
+    spot = arrived;
+  }
 });

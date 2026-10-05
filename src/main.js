@@ -69,7 +69,7 @@ addEventListener('blur', () => held.clear());
 /** @param {string} key */
 const pressed = (key) => (held.has(key) ? 1 : 0);
 
-let state = newGame(tuning);
+let state = newGame(tuning, map.roads);
 // How many debris strikes have been shown, and when the last one landed.
 let strikesSeen = 0;
 let struckAt = -Infinity;
@@ -87,7 +87,7 @@ function frame(now) {
     x: pressed('ArrowRight') - pressed('ArrowLeft'),
     y: pressed('ArrowUp') - pressed('ArrowDown'),
   };
-  if (!paused) state = step(state, steering, dt, tuning);
+  if (!paused) state = step(state, steering, dt, tuning, map.roads);
   // Remember when debris last hit, so the screen can flash for a moment.
   if (state.debrisStrikes > strikesSeen) {
     strikesSeen = state.debrisStrikes;

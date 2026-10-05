@@ -3,6 +3,8 @@
 // territory, and the roads are sorted into squares so that only the ones near
 // the view need drawing.
 
+import { buildNetwork } from './roads.js';
+
 // How many miles across each square is.
 export const squareMiles = 4;
 
@@ -16,27 +18,44 @@ const tiers = [['motorway'], ['trunk', 'primary'], ['secondary'], ['tertiary', '
  *   column and row, one path of roads for each tier.
  * @property {Path2D} counties The county lines.
  * @property {{ kind: string, name: string, x: number, y: number }[]} places
+ * @property {import('./roads.js').RoadNetwork} roads The roads the car
+ *   drives on: every road that is drawn.
  */
 
-/** @returns {Promise<GameMap>} */
-export async function loadMap() {
-  const response = await fetch('data/map.json');
-  if (!response.ok) throw new Error(`data/map.json answered ${response.status}`);
-  const data = await response.json();
-  const { south, west, north, east } = data.bounds;
+/**
+ * How to turn longitude and latitude into miles east and north of the middle
+ * of the territory.
+ * @param {{ south: number, west: number, north: number, east: number }} bounds
+ * @returns {(lon: number, lat: number) => { x: number, y: number }}
+ */
+export function milesFrom(bounds) {
+  const { south, west, north, east } = bounds;
   const midLat = (south + north) / 2;
   const midLon = (west + east) / 2;
   // A degree of latitude is about 69 miles everywhere. A degree of longitude
   // shrinks toward the poles.
   const milesPerLat = 69.05;
   const milesPerLon = 69.17 * Math.cos((midLat * Math.PI) / 180);
+  return (lon, lat) => ({ x: (lon - midLon) * milesPerLon, y: (lat - midLat) * milesPerLat });
+}
 
-  /**
-   * Longitude and latitude to miles east and north of the middle.
-   * @param {number} lon
-   * @param {number} lat
-   */
-  const toMiles = (lon, lat) => ({ x: (lon - midLon) * milesPerLon, y: (lat - midLat) * milesPerLat });
+/**
+ * Which tier a class of road belongs to. A ramp ("_link") counts with the
+ * road it joins.
+ * @param {string} roadClass
+ * @returns {number} Its tier, most important first, or -1 for a class the
+ *   game leaves out.
+ */
+export function tierOf(roadClass) {
+  return tiers.findIndex((classes) => classes.includes(roadClass.replace('_link', '')));
+}
+
+/** @returns {Promise<GameMap>} */
+export async function loadMap() {
+  const response = await fetch('data/map.json');
+  if (!response.ok) throw new Error(`data/map.json answered ${response.status}`);
+  const data = await response.json();
+  const toMiles = milesFrom(data.bounds);
 
   /**
    * @param {Path2D} path
@@ -48,10 +67,13 @@ export async function loadMap() {
 
   /** @type {GameMap['squares']} */
   const squares = new Map();
+  /** @type {{ x: number, y: number }[][]} */
+  const lines = [];
   for (const road of data.roads) {
-    const tier = tiers.findIndex((classes) => classes.includes(road.class.replace('_link', '')));
+    const tier = tierOf(road.class);
     if (tier < 0) continue;
     const points = road.points.map((/** @type {number[]} */ [lon, lat]) => toMiles(lon, lat));
+    lines.push(points);
     // A road goes into every square it could pass through.
     const columns = points.map((/** @type {{ x: number }} */ p) => Math.floor(p.x / squareMiles));
     const rows = points.map((/** @type {{ y: number }} */ p) => Math.floor(p.y / squareMiles));
@@ -74,5 +96,5 @@ export async function loadMap() {
     ...toMiles(place.lon, place.lat),
   }));
 
-  return { squares, counties, places };
+  return { squares, counties, places, roads: buildNetwork(lines) };
 }
