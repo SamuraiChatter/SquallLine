@@ -110,6 +110,7 @@ const roadStyles = [
   { colour: '#7f909e', width: 2.2 },
   { colour: '#4d5d6b', width: 1.5 },
   { colour: '#303d49', width: 1 },
+  { colour: '#2c3742', width: 1 },
 ];
 
 // The size of a place's name in pixels, by what kind of place it is.
@@ -134,7 +135,7 @@ function drawMap(ctx, map, wholeTerritory, middle, pixelsPerMile) {
   ctx.stroke(map.counties);
 
   // Only the squares of road the view touches. The whole-territory view
-  // leaves out the two least important tiers, which would be a grey blur.
+  // shows the two most important tiers: the rest would be a grey blur.
   const tiers = wholeTerritory ? 2 : roadStyles.length;
   for (let tier = tiers - 1; tier >= 0; tier--) {
     ctx.lineWidth = roadStyles[tier].width / pixelsPerMile;
