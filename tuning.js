@@ -92,6 +92,11 @@ export const tuning = {
     damagePerSecond: 0.03,
   },
 
+  // The storm for the day: the name of a storm file saved from the design
+  // mode and put in the storms folder, such as 'my-storm.json'. Leave it
+  // empty ('') to use the storm set out just below instead.
+  stormFile: '',
+
   storm: {
     // The corners of the storm's path, from where it starts to where it ends.
     // Each is so many miles east (x) and north (y) of the middle of the
@@ -119,5 +124,12 @@ export const tuning = {
     // How long before a tornado the hook starts to grow, as a share of the
     // path. Bigger gives the player more warning.
     hookLead: 0.08,
+  },
+
+  design: {
+    // How far each kind of place reaches from its middle, in miles. The
+    // design mode warns when a tornado's path comes this close to one,
+    // because tornado paths stay over open country.
+    townMiles: { city: 4, town: 1.5, village: 0.5 },
   },
 };

@@ -125,7 +125,7 @@ const nameSizes = { city: 38, town: 26, village: 20 };
  * @param {import('./rules.js').Point} middle The middle of the view.
  * @param {number} pixelsPerMile
  */
-function drawMap(ctx, map, wholeTerritory, middle, pixelsPerMile) {
+export function drawMap(ctx, map, wholeTerritory, middle, pixelsPerMile) {
   const { width, height } = ctx.canvas;
   const halfWide = width / 2 / pixelsPerMile;
   const halfTall = height / 2 / pixelsPerMile;

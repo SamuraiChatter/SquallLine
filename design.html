@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SquallLine storm design</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="style.css">
+    <style>
+      /* The design tools sit down the left side, over the empty part of the map. */
+      .design {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        width: 270px;
+        padding: 12px 14px;
+        border: 1px solid #3f5870;
+        border-radius: 8px;
+        background: rgba(11, 17, 24, 0.92);
+        color: #dce6ee;
+        font: 14px system-ui, sans-serif;
+      }
+
+      .design h1 {
+        margin: 0 0 10px;
+        font-size: 18px;
+      }
+
+      .design p {
+        margin: 10px 0;
+        line-height: 1.4;
+      }
+
+      .design .row {
+        display: flex;
+        gap: 6px;
+      }
+
+      .design button,
+      .design select,
+      .design input {
+        padding: 6px 8px;
+        border: 1px solid #5b7488;
+        border-radius: 6px;
+        background: #16212c;
+        color: inherit;
+        font: inherit;
+      }
+
+      .design button {
+        flex: 1;
+        cursor: pointer;
+      }
+
+      /* The tool in use. */
+      .design button[aria-pressed='true'] {
+        border-color: #ffd24a;
+        color: #ffd24a;
+      }
+
+      .design ol {
+        margin: 10px 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .design li {
+        margin-bottom: 8px;
+      }
+
+      .design li .row {
+        align-items: center;
+      }
+
+      .design li span {
+        flex: 1;
+      }
+
+      .design li button {
+        flex: none;
+      }
+
+      .design .warning {
+        margin: 4px 0 0;
+        color: #ff8f6b;
+      }
+
+      #message {
+        min-height: 2.8em;
+        color: #ffd24a;
+      }
+
+      .design label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .design label input {
+        flex: 1;
+        min-width: 0;
+      }
+
+      #clear {
+        width: 100%;
+        margin-top: 8px;
+      }
+    </style>
+    <script type="module" src="src/design.js"></script>
+  </head>
+  <body>
+    <!-- The same size as the game screen. -->
+    <canvas width="1920" height="1080"></canvas>
+    <aside class="design">
+      <h1>Storm design</h1>
+      <div class="row">
+        <button id="path-tool" type="button">Draw the path</button>
+        <button id="tornado-tool" type="button">Add tornadoes</button>
+      </div>
+      <p id="hint"></p>
+      <ol id="tornadoes"></ol>
+      <p id="message" role="status"></p>
+      <label>Name <input id="name" value="my-storm" maxlength="40"></label>
+      <div class="row">
+        <button id="save" type="button">Save</button>
+        <button id="load" type="button">Load</button>
+        <button id="play" type="button">Play</button>
+      </div>
+      <button id="clear" type="button">Start again</button>
+      <input id="file" type="file" accept=".json,application/json" hidden>
+    </aside>
+    <a class="credit" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>
+  </body>
+</html>
