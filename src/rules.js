@@ -65,6 +65,10 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  *   up, 1 is anchored.
  * @property {boolean} anchoring True while the skirts and spikes are going
  *   down or staying down, false while they are coming up or staying up.
+ * @property {number} topWind The strongest wind the roof gauge has recorded
+ *   today, in miles an hour. Nothing without the gauge.
+ * @property {number} scienceBonus What the day's top wind paid. Worked out
+ *   when the day ends.
  */
 
 /**
@@ -98,12 +102,15 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {number} [flipDamage]
  * @property {number} [anchoredRingTimes]
  * @property {boolean} [anchorHolds]
+ * @property {number} [viewfinderTimes]
+ * @property {boolean} [dashRadar]
+ * @property {boolean} [windGauge]
  */
 
 /**
  * The numbers a whole run plays by: what the days share, each day's own, and
  * the parts the garage sells.
- * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail' | 'anchor'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, days: Day[], parts: Part[] }} RunTuning
+ * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail' | 'anchor' | 'wind'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, days: Day[], parts: Part[] }} RunTuning
  */
 
 /**
@@ -119,8 +126,11 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  *   With skirts, ringTimes is what anchoring multiplies the danger ring by;
  *   without it the vehicle cannot anchor. With spikes, holds is true: an
  *   anchored vehicle stays put when the tornado passes over.
+ * @property {RunTuning['wind'] & { gauge?: boolean }} wind With the roof
+ *   wind gauge, gauge is true.
+ * @property {boolean} [dashRadar] True with the dash radar.
  *
- * @typedef {Omit<RunTuning, 'storm' | 'danger' | 'anchor' | 'days' | 'parts' | 'startingBalance'> & DayNumbers} Tuning
+ * @typedef {Omit<RunTuning, 'storm' | 'danger' | 'anchor' | 'wind' | 'days' | 'parts' | 'startingBalance'> & DayNumbers} Tuning
  */
 
 /** @typedef {import('./roads.js').RoadNetwork} RoadNetwork */
@@ -131,19 +141,22 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @param {T} tuning
  * @param {number} day Which day, counting from 1.
  * @param {string[]} [owned] The ids of the parts on the vehicle.
- * @returns {Omit<T, 'danger' | 'anchor'> & Tuning}
+ * @returns {Omit<T, 'danger' | 'anchor' | 'wind'> & Tuning}
  */
 export function dayTuning(tuning, day, owned = []) {
   const { path, tornadoes, footage } = tuning.days[day - 1];
   const parts = tuning.parts.filter((part) => owned.includes(part.id));
   /**
    * What the parts multiply one of the game's numbers by, between them.
-   * @param {'speedTimes' | 'payTimes' | 'hailDamageTimes' | 'debrisDamageTimes' | 'dangerRingTimes'} effect
+   * @param {'speedTimes' | 'payTimes' | 'hailDamageTimes' | 'debrisDamageTimes' | 'dangerRingTimes' | 'viewfinderTimes'} effect
    */
   const times = (effect) => parts.reduce((all, part) => all * (part[effect] ?? 1), 1);
   return {
     ...tuning,
     carMilesPerSecond: tuning.carMilesPerSecond * times('speedTimes'),
+    camera: { ...tuning.camera, viewfinderDegrees: tuning.camera.viewfinderDegrees * times('viewfinderTimes') },
+    dashRadar: parts.some((part) => part.dashRadar),
+    wind: { ...tuning.wind, gauge: parts.some((part) => part.windGauge) },
     storm: { ...tuning.storm, path, tornadoes },
     footage: { ...footage, payAtEdge: footage.payAtEdge * times('payTimes'), payAtTornado: footage.payAtTornado * times('payTimes') },
     danger: {
@@ -372,6 +385,8 @@ export function newGame(tuning, roads) {
     flipped: false,
     anchor: 0,
     anchoring: false,
+    topWind: 0,
+    scienceBonus: 0,
   };
 }
 
@@ -379,9 +394,10 @@ export function newGame(tuning, roads) {
 export const headHome = endDay;
 
 /**
- * Ends the day. The TV station buys the footage, the repair bill comes out,
- * and what is left joins the balance, which never goes below zero. In free
- * play the balance is left alone.
+ * Ends the day. The TV station buys the footage, science pays a bonus for
+ * the top wind the roof gauge recorded, the repair bill comes out, and what
+ * is left joins the balance, which never goes below zero. In free play the
+ * balance is left alone.
  * @param {GameState} state
  * @param {Tuning} tuning
  * @returns {GameState}
@@ -389,11 +405,13 @@ export const headHome = endDay;
 function endDay(state, tuning) {
   if (state.dayOver) return state;
   const repairBill = Math.round(state.damage * tuning.danger.fullRepairCost);
+  const scienceBonus = Math.round(state.topWind * tuning.wind.bonusPerMph);
   return {
     ...state,
     dayOver: true,
     repairBill,
-    balance: state.freePlay ? state.balance : Math.max(0, state.balance + state.money - repairBill),
+    scienceBonus,
+    balance: state.freePlay ? state.balance : Math.max(0, state.balance + state.money + scienceBonus - repairBill),
   };
 }
 
@@ -408,6 +426,19 @@ export function payPerSecond(miles, tuning) {
   // A ring of no miles is the tornado itself: nothing outside it pays.
   if (miles > ringMiles || ringMiles <= 0) return 0;
   return payAtEdge + (payAtTornado - payAtEdge) * (1 - miles / ringMiles);
+}
+
+/**
+ * How fast the wind blows this many miles from a tornado, in miles an hour.
+ * Fastest right at the tornado, and faster for a stronger one.
+ * @param {number} miles
+ * @param {number} strength The tornado's strength, from 0 for EF0 to 5.
+ * @param {Tuning} tuning
+ */
+export function windMph(miles, strength, tuning) {
+  const { mphAtTornado, reachMiles } = tuning.wind;
+  const top = mphAtTornado[Math.min(strength, mphAtTornado.length - 1)];
+  return top * Math.max(0, 1 - miles / reachMiles);
 }
 
 /**
@@ -542,7 +573,7 @@ export function step(state, steering, dt, tuning, roads) {
  * @returns {GameState}
  */
 function battered(state, dt, tuning) {
-  let { damage, debrisClock, debrisStrikes } = state;
+  let { damage, debrisClock, debrisStrikes, topWind } = state;
   let flipped = false;
   let wrecked = false;
 
@@ -552,6 +583,8 @@ function battered(state, dt, tuning) {
   if (state.storm.tornado > 0) {
     const miles = milesToFunnel(state);
     damage += windDamagePerSecond(miles, tuning, dangerRingMiles(state, tuning)) * dt;
+    // The roof gauge keeps the strongest wind of the day.
+    if (tuning.wind.gauge) topWind = Math.max(topWind, windMph(miles, state.storm.strength, tuning));
     // Spiked to the ground, the car stays put as the tornado passes over.
     flipped = tornadoOverhead(state, tuning) && !insideTornado(state, tuning);
     if (flipped && !state.flipped) {
@@ -578,9 +611,9 @@ function battered(state, dt, tuning) {
   }
 
   if (wrecked || damage >= 1) {
-    return endDay({ ...state, damage: 1, debrisClock, debrisStrikes, flipped, wrecked: true }, tuning);
+    return endDay({ ...state, damage: 1, debrisClock, debrisStrikes, flipped, topWind, wrecked: true }, tuning);
   }
-  return { ...state, damage, debrisClock, debrisStrikes, flipped };
+  return { ...state, damage, debrisClock, debrisStrikes, flipped, topWind };
 }
 
 /**

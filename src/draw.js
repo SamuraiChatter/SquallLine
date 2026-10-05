@@ -107,6 +107,41 @@ export function draw(ctx, state, wholeTerritory, map, day) {
   }
 }
 
+/**
+ * Paints the dash radar: a small radar with the car in the middle, for the
+ * windshield view.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {import('./rules.js').GameState} state
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
+ * @param {{ left: number, top: number, wide: number, tall: number }} box
+ *   Where on the screen it goes, in pixels.
+ */
+export function drawDashRadar(ctx, state, day, box) {
+  const pixelsPerMile = box.wide / tuning.camera.dashRadarMiles;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.beginPath();
+  ctx.rect(box.left, box.top, box.wide, box.tall);
+  ctx.clip();
+  ctx.fillStyle = '#0b1118';
+  ctx.fillRect(box.left, box.top, box.wide, box.tall);
+
+  // Draw in miles with north at the top, as the map does.
+  ctx.translate(box.left + box.wide / 2, box.top + box.tall / 2);
+  ctx.scale(pixelsPerMile, -pixelsPerMile);
+  ctx.translate(-state.car.x, -state.car.y);
+  drawStorm(ctx, state.storm, day);
+  ctx.beginPath();
+  ctx.arc(state.car.x, state.car.y, 7 / pixelsPerMile, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffd24a';
+  ctx.fill();
+  ctx.restore();
+
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = '#39424c';
+  ctx.strokeRect(box.left, box.top, box.wide, box.tall);
+}
+
 // How each tier of road is drawn, most important first: its colour and its
 // width in pixels. Interstates are the brightest.
 const roadStyles = [

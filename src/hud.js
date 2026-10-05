@@ -20,6 +20,12 @@ export function drawMoney(ctx, state) {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(dollars(state.money), ctx.canvas.width * 0.05, ctx.canvas.height * 0.035);
+  // The roof wind gauge's reading, once it has one.
+  if (state.topWind > 0) {
+    ctx.fillStyle = '#dce6ee';
+    ctx.font = '30px system-ui, sans-serif';
+    ctx.fillText(`Top wind: ${Math.round(state.topWind)} mph`, ctx.canvas.width * 0.05, ctx.canvas.height * 0.095);
+  }
 }
 
 /**
@@ -197,6 +203,7 @@ export function drawSummary(ctx, state, trial) {
     // Nobody is ever hurt in this game.
     ...(state.wrecked ? ['The crew walked away safe. The car was towed home.'] : []),
     `Footage sold to ${tuning.tvStation}: ${dollars(state.money)}`,
+    ...(state.topWind > 0 ? [`Top wind ${Math.round(state.topWind)} mph. Science bonus: ${dollars(state.scienceBonus)}`] : []),
     ...(state.repairBill > 0 ? [`Repair bill: ${dollars(state.repairBill)}`] : []),
     // Free play leaves the balance, which is the final score, alone.
     state.freePlay ? `Free play: the final score stays ${dollars(state.balance)}` : `Balance: ${dollars(state.balance)}`,
