@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildNetwork } from './roads.js';
-import { hailCore, headHome, inHailCore, newGame, payPerSecond, step, toggleFilming, tornadoInFrame, windDamagePerSecond } from './rules.js';
+import { beginChase, dayTuning, hailCore, headHome, inHailCore, newGame, newRun, nextDay, payPerSecond, step, strongest, toggleFilming, tornadoInFrame, windDamagePerSecond } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
@@ -368,4 +368,129 @@ test('each debris strike adds damage on top of the wind', () => {
 
 test('outside the debris zone nothing strikes', () => {
   assert.equal(after(parkedSouthOfTornado(2), 1, stillStorm).debrisStrikes, 0);
+});
+
+// A run of three short days. Each storm crosses in ten seconds with one
+// tornado, well away from the crossroads where the car starts.
+const runTuning = {
+  ...tuning,
+  startingBalance: 50,
+  days: [0, 1, 2].map((strength) => ({
+    path: [{ x: 20, y: 20 }, { x: 30, y: 20 }],
+    tornadoes: [{ start: 0.2, end: 0.8, strength }],
+    footage: { ringMiles: 10 - strength * 5, payAtEdge: 10 + strength, payAtTornado: 110 },
+  })),
+};
+
+/**
+ * Sits out the chase without touching the keys until the day ends.
+ * @param {import('./rules.js').GameState} state
+ */
+function sitOut(state) {
+  const day = dayTuning(runTuning, state.day);
+  for (let i = 0; i < 200 && !state.dayOver; i++) state = step(state, still, 0.25, day, roads);
+  return state;
+}
+
+test("a run starts at day one's briefing with the starting balance", () => {
+  const state = newRun(runTuning, roads);
+  assert.equal(state.day, 1);
+  assert.equal(state.briefing, true);
+  assert.equal(state.balance, 50);
+});
+
+test('nothing moves during the briefing', () => {
+  const state = newRun(runTuning, roads);
+  assert.equal(step(state, { x: 1, y: 0 }, 1, dayTuning(runTuning, 1), roads), state);
+});
+
+test('each day plays by its own storm and footage numbers', () => {
+  const second = { ...runTuning.days[1], path: [{ x: 5, y: 5 }, { x: 6, y: 5 }] };
+  const day = dayTuning({ ...runTuning, days: [runTuning.days[0], second] }, 2);
+  assert.deepEqual(day.footage, { ringMiles: 5, payAtEdge: 11, payAtTornado: 110 });
+  const { x, y } = newGame(day, roads).storm;
+  assert.deepEqual({ x, y }, { x: 5, y: 5 });
+  // What the days share comes through untouched.
+  assert.equal(day.storm.milesPerSecond, runTuning.storm.milesPerSecond);
+});
+
+test('a run goes briefing, chase, summary for every day and ends on the final score', () => {
+  let state = newRun(runTuning, roads);
+  const seen = [];
+  while (!state.finished) {
+    assert.equal(state.briefing, true);
+    seen.push(state.day);
+    state = beginChase(state);
+    assert.equal(state.dayOver, false);
+    state = sitOut(state);
+    assert.equal(state.dayOver, true);
+    assert.equal(state.finished, false);
+    state = nextDay(state, runTuning, roads);
+  }
+  assert.deepEqual(seen, [1, 2, 3]);
+});
+
+test('a day with no earnings still moves on to the next', () => {
+  const ended = sitOut(beginChase(newRun(runTuning, roads)));
+  assert.equal(ended.money, 0);
+  const next = nextDay(ended, runTuning, roads);
+  assert.equal(next.day, 2);
+  assert.equal(next.briefing, true);
+});
+
+test('the next day starts fresh but keeps the balance', () => {
+  const ended = headHome({ ...beginChase(newRun(runTuning, roads)), money: 300, damage: 0.25 }, dayTuning(runTuning, 1));
+  // 50 in the bank, 300 earned, a quarter of the 400 repair cost.
+  assert.equal(ended.balance, 250);
+  const next = nextDay(ended, runTuning, roads);
+  assert.equal(next.balance, 250);
+  assert.equal(next.money, 0);
+  assert.equal(next.damage, 0);
+  assert.equal(next.dayOver, false);
+});
+
+test('the day cannot move on while the chase is still running', () => {
+  const chasing = beginChase(newRun(runTuning, roads));
+  assert.equal(nextDay(chasing, runTuning, roads), chasing);
+});
+
+test("the final score is the balance after the last day's repair bill", () => {
+  const lastDay = { ...beginChase(newRun(runTuning, roads)), day: 3, balance: 1000, money: 200, damage: 0.5 };
+  const final = nextDay(headHome(lastDay, dayTuning(runTuning, 3)), runTuning, roads);
+  assert.equal(final.finished, true);
+  assert.equal(final.balance, 1000);
+  assert.equal(final.best, 1000);
+});
+
+test('the best final balance is kept when a later run scores less', () => {
+  const lastDay = { ...beginChase(newRun(runTuning, roads, 5000)), day: 3, balance: 1000 };
+  const final = nextDay(headHome(lastDay, dayTuning(runTuning, 3)), runTuning, roads);
+  assert.equal(final.balance, 1000);
+  assert.equal(final.best, 5000);
+});
+
+test('a later day has a smaller footage ring, and a ring of no miles pays nothing', () => {
+  assert.ok(dayTuning(runTuning, 1).footage.ringMiles > dayTuning(runTuning, 2).footage.ringMiles);
+  const last = dayTuning(runTuning, 3);
+  assert.equal(last.footage.ringMiles, 0);
+  assert.equal(payPerSecond(0.1, last), 0);
+  assert.equal(payPerSecond(0, last), 0);
+});
+
+test('the storm carries the strength of its tornado, and the day that of its strongest', () => {
+  const day = {
+    ...runTuning.days[0],
+    tornadoes: [{ start: 0.2, end: 0.4, strength: 1 }, { start: 0.6, end: 0.8, strength: 4 }],
+  };
+  const two = dayTuning({ ...runTuning, days: [day] }, 1);
+  assert.equal(strongest(day.tornadoes), 4);
+  assert.equal(strongest([]), 0);
+  // Up to the end of the first tornado it is the first one's strength, then
+  // the second's.
+  let state = newGame(two, roads);
+  assert.equal(state.storm.strength, 1);
+  state = step(state, still, 3, two, roads);
+  assert.equal(state.storm.strength, 1);
+  state = step(state, still, 2, two, roads);
+  assert.equal(state.storm.strength, 4);
 });

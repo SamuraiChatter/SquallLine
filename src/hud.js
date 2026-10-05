@@ -2,7 +2,7 @@
 // pause screen and the end-of-day summary.
 
 import { tuning } from '../tuning.js';
-import { inDebrisZone, inHailCore, milesToFunnel } from './rules.js';
+import { inDebrisZone, inHailCore, milesToFunnel, strongest } from './rules.js';
 
 /** @param {number} amount */
 const dollars = (amount) => `$${Math.round(amount).toLocaleString('en-US')}`;
@@ -40,8 +40,9 @@ export function drawTrialNote(ctx) {
  * @param {CanvasRenderingContext2D} ctx
  * @param {import('./rules.js').GameState} state
  * @param {boolean} struck True for a moment after debris hits the car.
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
  */
-export function drawDamage(ctx, state, struck) {
+export function drawDamage(ctx, state, struck, day) {
   const { width, height } = ctx.canvas;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   // A debris strike flashes the whole screen.
@@ -73,9 +74,9 @@ export function drawDamage(ctx, state, struck) {
   const miles = milesToFunnel(state);
   const tornado = state.storm.tornado > 0;
   let warning = '';
-  if (inHailCore(state.car, state.storm, tuning)) warning = 'HAIL! It is damaging the car.';
-  if (tornado && miles < tuning.danger.ringMiles) warning = 'TOO CLOSE! The wind is damaging the car.';
-  if (inDebrisZone(state, tuning)) warning = 'DEBRIS! Get out of here.';
+  if (inHailCore(state.car, state.storm, day)) warning = 'HAIL! It is damaging the car.';
+  if (tornado && miles < day.danger.ringMiles) warning = 'TOO CLOSE! The wind is damaging the car.';
+  if (inDebrisZone(state, day)) warning = 'DEBRIS! Get out of here.';
   if (warning) {
     ctx.fillStyle = '#ff4d4d';
     ctx.font = 'bold 40px system-ui, sans-serif';
@@ -111,11 +112,39 @@ export function drawPause(ctx) {
 }
 
 /**
- * Paints the end-of-day summary.
+ * Paints the forecast briefing before a chase.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {import('./rules.js').GameState} state
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
+ * @param {number} days How many days there are.
+ */
+export function drawBriefing(ctx, state, day, days) {
+  const { ringMiles } = day.footage;
+  drawScreen(ctx, [
+    `Day ${state.day} of ${days}`,
+    `Forecast: tornadoes up to EF${strongest(day.storm.tornadoes)}`,
+    ringMiles > 0 ? `Footage ring: ${ringMiles} ${ringMiles === 1 ? 'mile' : 'miles'}` : 'Footage ring: the tornado itself',
+    'Enter: start the chase',
+  ]);
+}
+
+/**
+ * Paints the final score, after the last day.
  * @param {CanvasRenderingContext2D} ctx
  * @param {import('./rules.js').GameState} state
  */
-export function drawSummary(ctx, state) {
+export function drawFinalScore(ctx, state) {
+  drawScreen(ctx, ['Final score', dollars(state.balance), `Best so far: ${dollars(state.best)}`, 'Enter: play again']);
+}
+
+/**
+ * Paints the end-of-day summary.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {import('./rules.js').GameState} state
+ * @param {boolean} trial True for a storm being tried out from the design
+ *   mode.
+ */
+export function drawSummary(ctx, state, trial) {
   drawScreen(ctx, [
     state.wrecked ? 'Wrecked' : 'Day over',
     // Nobody is ever hurt in this game.
@@ -123,6 +152,6 @@ export function drawSummary(ctx, state) {
     `Footage sold to ${tuning.tvStation}: ${dollars(state.money)}`,
     ...(state.repairBill > 0 ? [`Repair bill: ${dollars(state.repairBill)}`] : []),
     `Balance: ${dollars(state.balance)}`,
-    'Refresh the page to play again',
+    trial ? 'Enter: try the storm again' : 'Enter: carry on',
   ]);
 }

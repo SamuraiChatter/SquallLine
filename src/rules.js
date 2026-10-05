@@ -21,6 +21,8 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  *   full size. There is only ever one.
  * @property {Point} funnel Where the hook curls and the tornado touches
  *   down, on the storm's south-west side.
+ * @property {number} strength How strong the tornado on the ground is, or
+ *   the next one due: from 0 for EF0 to 5 for EF5.
  * @property {boolean} spent True once the storm's last tornado has died.
  */
 
@@ -46,6 +48,12 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {boolean} wrecked True once the car is wrecked. Nobody is hurt.
  * @property {number} repairBill What the day's damage cost to repair. Worked
  *   out when the day ends.
+ * @property {number} day Which chase day this is, counting from 1.
+ * @property {boolean} briefing True while the forecast briefing is up,
+ *   before the chase starts.
+ * @property {boolean} finished True once the last day is over and the final
+ *   score is showing.
+ * @property {number} best The best final balance of any finished run.
  */
 
 /**
@@ -54,11 +62,88 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @typedef {{ x: number, y: number }} Steering
  */
 
-/** @typedef {Pick<typeof import('../tuning.js').tuning, 'carMilesPerSecond' | 'carStart' | 'storm' | 'footage' | 'danger' | 'debris' | 'hail'> & { camera: Pick<typeof import('../tuning.js').tuning.camera, 'viewfinderDegrees' | 'panDegreesPerSecond'> }} Tuning */
+/** @typedef {typeof import('../tuning.js').tuning} TuningFile */
+
+/**
+ * One chase day's own numbers.
+ * @typedef {object} Day
+ * @property {Point[]} path The corners of the storm's path.
+ * @property {{ start: number, end: number, strength?: number }[]} tornadoes
+ * @property {{ ringMiles: number, payAtEdge: number, payAtTornado: number }} footage
+ */
+
+/**
+ * The numbers a whole run plays by: what the days share, and each day's own.
+ * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, days: Day[] }} RunTuning
+ */
+
+/**
+ * The numbers one day plays by: the day's storm and footage numbers, set in
+ * among what the days share.
+ * @typedef {Omit<RunTuning, 'storm' | 'days' | 'startingBalance'> & { storm: RunTuning['storm'] & Pick<Day, 'path' | 'tornadoes'>, footage: Day['footage'] }} Tuning
+ */
 
 /** @typedef {import('./roads.js').RoadNetwork} RoadNetwork */
 
 /**
+ * The numbers one day plays by.
+ * @template {RunTuning} T
+ * @param {T} tuning
+ * @param {number} day Which day, counting from 1.
+ * @returns {T & Tuning}
+ */
+export function dayTuning(tuning, day) {
+  const { path, tornadoes, footage } = tuning.days[day - 1];
+  return { ...tuning, storm: { ...tuning.storm, path, tornadoes }, footage };
+}
+
+/**
+ * The strength of a day's strongest tornado, from 0 for EF0 to 5 for EF5.
+ * @param {Day['tornadoes']} tornadoes
+ */
+export function strongest(tornadoes) {
+  return Math.max(0, ...tornadoes.map((tornado) => tornado.strength ?? 0));
+}
+
+/**
+ * Starts a run of chase days, at day one's briefing.
+ * @param {RunTuning} tuning
+ * @param {RoadNetwork} roads
+ * @param {number} [best] The best final balance so far.
+ * @returns {GameState}
+ */
+export function newRun(tuning, roads, best = 0) {
+  return { ...newGame(dayTuning(tuning, 1), roads), briefing: true, balance: tuning.startingBalance, best };
+}
+
+/**
+ * Leaves the briefing and starts the chase.
+ * @param {GameState} state
+ * @returns {GameState}
+ */
+export function beginChase(state) {
+  return { ...state, briefing: false };
+}
+
+/**
+ * Moves on from the day summary: to the next day's briefing, or after the
+ * last day to the final score. The player always moves on, whatever the day
+ * earned.
+ * @param {GameState} state
+ * @param {RunTuning} tuning
+ * @param {RoadNetwork} roads
+ * @returns {GameState}
+ */
+export function nextDay(state, tuning, roads) {
+  if (!state.dayOver || state.finished) return state;
+  // The final score is the balance once the last day's repairs are paid.
+  if (state.day >= tuning.days.length) return { ...state, finished: true, best: Math.max(state.best, state.balance) };
+  const day = state.day + 1;
+  return { ...newGame(dayTuning(tuning, day), roads), day, briefing: true, balance: state.balance, best: state.best };
+}
+
+/**
+ * One day, ready to chase: no briefing, and nothing in the bank.
  * @param {Tuning} tuning
  * @param {RoadNetwork} roads
  * @returns {GameState}
@@ -80,6 +165,10 @@ export function newGame(tuning, roads) {
     debrisStrikes: 0,
     wrecked: false,
     repairBill: 0,
+    day: 1,
+    briefing: false,
+    finished: false,
+    best: 0,
   };
 }
 
@@ -112,7 +201,8 @@ function endDay(state, tuning) {
  */
 export function payPerSecond(miles, tuning) {
   const { ringMiles, payAtEdge, payAtTornado } = tuning.footage;
-  if (miles > ringMiles) return 0;
+  // A ring of no miles is the tornado itself: nothing outside it pays.
+  if (miles > ringMiles || ringMiles <= 0) return 0;
   return payAtEdge + (payAtTornado - payAtEdge) * (1 - miles / ringMiles);
 }
 
@@ -174,7 +264,7 @@ function bearingToFunnel(state) {
  * @returns {GameState}
  */
 export function step(state, steering, dt, tuning, roads) {
-  if (state.dayOver) return state;
+  if (state.briefing || state.dayOver) return state;
 
   const storm = stormAt(state.storm.miles + tuning.storm.milesPerSecond * dt, tuning.storm);
   // The storm has nothing left to film, so the day is done.
@@ -354,5 +444,6 @@ function stormAt(miles, tuning) {
   }
   const last = tuning.tornadoes.at(-1);
   const spent = last !== undefined && along >= last.end;
-  return { miles, x, y, hook, tornado, funnel: funnelOf({ x, y }), spent };
+  const strength = (onGround ?? next)?.strength ?? 0;
+  return { miles, x, y, hook, tornado, funnel: funnelOf({ x, y }), strength, spent };
 }

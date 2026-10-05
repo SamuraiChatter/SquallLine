@@ -236,7 +236,7 @@ element('save').addEventListener('click', () => {
   link.download = fileName();
   link.click();
   URL.revokeObjectURL(link.href);
-  say(`Saved ${fileName()}. Put it in the storms folder, then set stormFile in tuning.js to '${fileName()}'.`);
+  say(`Saved ${fileName()}. Put it in the storms folder, then set a day's stormFile in tuning.js to '${fileName()}'.`);
 });
 
 element('load').addEventListener('click', () => fileBox.click());
