@@ -92,6 +92,27 @@ export function drawDamage(ctx, state, struck, day) {
 }
 
 /**
+ * Writes the spotters' newest report along the bottom of both views, for a
+ * few seconds after it comes in.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {import('./rules.js').GameState} state
+ */
+export function drawReport(ctx, state) {
+  const newest = state.reports.at(-1);
+  if (!newest || newest.age >= tuning.spotters.wordsSeconds || state.dayOver) return;
+  const { width, height } = ctx.canvas;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.font = '40px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const wide = ctx.measureText(newest.words).width + 60;
+  ctx.fillStyle = 'rgba(11, 17, 24, 0.85)';
+  ctx.fillRect((width - wide) / 2, height * 0.84 - 34, wide, 68);
+  ctx.fillStyle = '#ff8f6b';
+  ctx.fillText(newest.words, width / 2, height * 0.84);
+}
+
+/**
  * Dims the screen and writes lines of text in the middle, the first one big.
  * @param {CanvasRenderingContext2D} ctx
  * @param {string[]} lines

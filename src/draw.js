@@ -44,6 +44,7 @@ export function draw(ctx, state, wholeTerritory, map, day) {
   ctx.strokeRect(-halfWide, -halfTall, halfWide * 2, halfTall * 2);
 
   drawStorm(ctx, state, pixelsPerMile);
+  drawReports(ctx, state, pixelsPerMile);
 
   if (storm.tornado > 0) {
     // The footage ring: film from inside it to get paid. A ring of no miles
@@ -134,6 +135,7 @@ function drawMinimap(ctx, state, map, viewPixelsPerMile) {
   ctx.translate(left + wide / 2, top + tall / 2);
   ctx.scale(pixelsPerMile, -pixelsPerMile);
   drawStorm(ctx, state, pixelsPerMile);
+  drawReports(ctx, state, pixelsPerMile);
   // What the main view shows, and the car in the middle of it.
   const viewWide = width / viewPixelsPerMile;
   const viewTall = height / viewPixelsPerMile;
@@ -183,6 +185,28 @@ export function drawDashRadar(ctx, state, box) {
   ctx.lineWidth = 6;
   ctx.strokeStyle = '#39424c';
   ctx.strokeRect(box.left, box.top, box.wide, box.tall);
+}
+
+/**
+ * Paints the spotters' reports: a ring and a dot at each reported spot, which
+ * fade away as the report gets old.
+ * @param {CanvasRenderingContext2D} ctx Already set up to draw in miles.
+ * @param {import('./rules.js').GameState} state
+ * @param {number} pixelsPerMile
+ */
+function drawReports(ctx, state, pixelsPerMile) {
+  for (const report of state.reports) {
+    const colour = `rgba(255, 143, 107, ${Math.max(0, 1 - report.age / tuning.spotters.ringSeconds)})`;
+    ctx.beginPath();
+    ctx.arc(report.x, report.y, 9 / pixelsPerMile + 0.25, 0, Math.PI * 2);
+    ctx.lineWidth = 4 / pixelsPerMile;
+    ctx.strokeStyle = colour;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(report.x, report.y, 3 / pixelsPerMile, 0, Math.PI * 2);
+    ctx.fillStyle = colour;
+    ctx.fill();
+  }
 }
 
 // How each tier of road is drawn, most important first: its colour and its

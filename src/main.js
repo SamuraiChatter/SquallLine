@@ -5,8 +5,8 @@ import { tuning } from '../tuning.js';
 import { draw, sweepRadar } from './draw.js';
 import { drawGarage } from './garage.js';
 import { loadMap } from './map.js';
-import { drawAbout, drawBriefing, drawDamage, drawDayChoice, drawFinalScore, drawMoney, drawNewGameCheck, drawPause, drawSummary, drawTitle, drawTrialNote } from './hud.js';
-import { beginChase, buy, dayTuning, toggleAnchor, freePlay, headHome, newRun, newSave, nextDay, readSave, resume, runFinished, saveKey, saveOf, step, strongest, toggleFilming } from './rules.js';
+import { drawAbout, drawBriefing, drawDamage, drawDayChoice, drawFinalScore, drawMoney, drawNewGameCheck, drawPause, drawReport, drawSummary, drawTitle, drawTrialNote } from './hud.js';
+import { beginChase, buy, dayTuning, toggleAnchor, freePlay, headHome, newRun, newSave, nextDay, readSave, resume, runFinished, saveKey, saveOf, spotters, step, strongest, toggleFilming } from './rules.js';
 import { designKey, readStorm } from './storms.js';
 import { drawWindshield } from './windshield.js';
 
@@ -227,7 +227,7 @@ function frame(now) {
     x: pressed('ArrowRight') - pressed('ArrowLeft'),
     y: pressed('ArrowUp') - pressed('ArrowDown'),
   };
-  if (!paused) state = step(state, steering, dt, game, map.roads);
+  if (!paused) state = spotters(step(state, steering, dt, game, map.roads), dt, game, map.places);
   // Progress is saved as soon as a day is over. Trying out a storm and free
   // play never change it.
   if (state.dayOver && !trial && !state.freePlay && saved.day !== state.day + 1) keep(saveOf(state, run));
@@ -242,6 +242,7 @@ function frame(now) {
   else draw(ctx, state, wholeTerritory || state.briefing, map, game);
   drawMoney(ctx, state);
   drawDamage(ctx, state, now - struckAt < 180, game);
+  drawReport(ctx, state);
   if (trial) drawTrialNote(ctx);
   if (screen === 'title') drawTitle(ctx, saved, run.days.length, canSave);
   else if (screen === 'about') drawAbout(ctx);
