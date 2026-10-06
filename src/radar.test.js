@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { beamPassed, bearingOf, colourOf, coverOf, dbzAt, hailDbz, hookSpot, rotationOf } from './radar.js';
+import { beamPassed, bearingOf, colourOf, coverOf, coupletOf, dbzAt, hailDbz, hookSpot, inCouplet, rotationOf, velocityAt, velocityColourOf, windCoverOf } from './radar.js';
 import { funnelOf, inHailCore } from './rules.js';
 
 const day = /** @type {import('./rules.js').Tuning} */ (/** @type {unknown} */ ({ hail: { coreMilesLong: 1.5, coreMilesWide: 1 } }));
@@ -12,7 +12,7 @@ const day = /** @type {import('./rules.js').Tuning} */ (/** @type {unknown} */ (
  */
 function stormAt(more = {}) {
   const middle = { x: 4, y: -7 };
-  return { miles: 0, ...middle, hook: 0, tornadoHook: 0, tornado: 0, funnel: funnelOf(middle), strength: 0, spent: false, ...more };
+  return { miles: 0, ...middle, heading: { x: 1, y: 0 }, hook: 0, tornadoHook: 0, tornado: 0, funnel: funnelOf(middle), strength: 0, spent: false, ...more };
 }
 
 /** @param {import('./rules.js').Storm} storm */
@@ -131,4 +131,147 @@ test("the middle of the storm's rotation is inside the hook's curl, close to the
     const spot = hookSpot(storm, tenth / 10);
     assert.ok(Math.hypot(spot.x - middle.x, spot.y - middle.y) > 0.9);
   }
+});
+
+// The velocity view: the wind along the radar's beam, in miles an hour. More
+// than nothing is blowing away from the radar, less is blowing toward it.
+
+// The storm of these tests is at 4 east, 7 south. One radar stands well to
+// its north-east, as the game's does, and one well to its south-west.
+const northEast = { x: 20, y: 9 };
+const southWest = { x: -12, y: -23 };
+
+/**
+ * The spots one couplet's width either side of the middle of a storm's
+ * rotation, across the beam: to the left and to the right, looking out from
+ * the radar.
+ * @param {import('./rules.js').Storm} storm
+ * @param {import('./rules.js').Point} site
+ */
+function eitherSide(storm, site) {
+  const couplet = coupletOf(storm);
+  const far = Math.hypot(couplet.x - site.x, couplet.y - site.y);
+  const out = { x: (couplet.x - site.x) / far, y: (couplet.y - site.y) / far };
+  const left = { x: couplet.x - out.y * couplet.miles, y: couplet.y + out.x * couplet.miles };
+  const right = { x: couplet.x + out.y * couplet.miles, y: couplet.y - out.x * couplet.miles };
+  return { left: velocityAt(left, storm, site), right: velocityAt(right, storm, site) };
+}
+
+test('with no hook the wind is the broad flow of the storm, with no fast pair anywhere', () => {
+  const storm = stormAt();
+  for (let x = storm.x - 8; x <= storm.x + 13; x += 0.25) {
+    for (let y = storm.y - 8; y <= storm.y + 13; y += 0.25) {
+      assert.ok(Math.abs(velocityAt({ x, y }, storm, northEast)) < 30, `at ${x}, ${y}`);
+    }
+  }
+});
+
+test("the storm's own travel blows toward a radar ahead of it and away from one behind it", () => {
+  // The storm is heading east.
+  const storm = stormAt();
+  assert.ok(velocityAt({ x: storm.x, y: storm.y }, storm, { x: storm.x + 20, y: storm.y }) < -10);
+  assert.ok(velocityAt({ x: storm.x, y: storm.y }, storm, { x: storm.x - 20, y: storm.y }) > 10);
+});
+
+test('with a tornado on the ground a fast pair sits at the funnel, one side toward the radar and one away', () => {
+  const storm = stormAt({ hook: 1, tornadoHook: 1, tornado: 1 });
+  const couplet = coupletOf(storm);
+  assert.ok(Math.hypot(couplet.x - storm.funnel.x, couplet.y - storm.funnel.y) < 1e-9);
+  const { left, right } = eitherSide(storm, northEast);
+  assert.ok(left < -30 && right > 30, `${left}, ${right}`);
+});
+
+test('the side toward the radar is the same way round for a storm on either side of the radar', () => {
+  // The storm turns anticlockwise, so looking out from the radar the wind on
+  // the left of the rotation comes toward it and the wind on the right goes
+  // away, wherever the radar stands.
+  for (const site of [northEast, southWest]) {
+    for (const hook of [0.6, 1]) {
+      const { left, right } = eitherSide(stormAt({ hook }), site);
+      assert.ok(left < 0 && right > 0, `${JSON.stringify(site)} ${hook}: ${left}, ${right}`);
+      assert.ok(right - left > 40);
+    }
+  }
+});
+
+test('the pair starts at the middle of the rotation and moves to the funnel as the hook grows', () => {
+  const start = coupletOf(stormAt({ hook: 0.01 }));
+  const middle = rotationOf(stormAt());
+  assert.ok(Math.hypot(start.x - middle.x, start.y - middle.y) < 0.05);
+  const storm = stormAt({ hook: 1 });
+  const full = coupletOf(storm);
+  assert.ok(Math.hypot(full.x - storm.funnel.x, full.y - storm.funnel.y) < 1e-9);
+});
+
+test('the pair gets tighter and faster as the hook grows', () => {
+  const faint = coupletOf(stormAt({ hook: 0.2 }));
+  const half = coupletOf(stormAt({ hook: 0.5 }));
+  const full = coupletOf(stormAt({ hook: 1 }));
+  assert.ok(faint.miles > half.miles && half.miles > full.miles);
+  assert.ok(faint.mph < half.mph && half.mph < full.mph);
+  assert.equal(coupletOf(stormAt()).mph, 0);
+  // And so does what the radar sees of it.
+  const wide = eitherSide(stormAt({ hook: 0.2 }), northEast);
+  const tight = eitherSide(stormAt({ hook: 1 }), northEast);
+  assert.ok(tight.right - tight.left > 2 * (wide.right - wide.left));
+});
+
+test('a false alarm has a pair like a real hook, which loosens as the hook fades', () => {
+  const held = stormAt({ hook: 1, tornadoHook: 0 });
+  const fading = stormAt({ hook: 0.4, tornadoHook: 0 });
+  assert.deepEqual(coupletOf(held), coupletOf(stormAt({ hook: 1, tornadoHook: 1 })));
+  assert.ok(coupletOf(fading).miles > coupletOf(held).miles);
+  assert.ok(coupletOf(fading).mph < coupletOf(held).mph);
+});
+
+test('far from the storm there is no wind to show', () => {
+  const storm = stormAt({ hook: 1 });
+  assert.equal(velocityAt({ x: storm.x - 20, y: storm.y }, storm, northEast), 0);
+});
+
+test('wind toward the radar is green, wind away is red, faster is brighter and nearly still is dull', () => {
+  const [stillRed, stillGreen, stillBlue] = velocityColourOf(0);
+  assert.ok(Math.abs(stillRed - stillGreen) < 40 && Math.abs(stillGreen - stillBlue) < 40);
+  assert.deepEqual(velocityColourOf(3), velocityColourOf(-3));
+  for (const mph of [10, 25, 40, 70]) {
+    const [awayRed, awayGreen] = velocityColourOf(mph);
+    const [towardRed, towardGreen] = velocityColourOf(-mph);
+    assert.ok(awayRed > awayGreen + 60, `${mph} away`);
+    assert.ok(towardGreen > towardRed + 60, `${mph} toward`);
+  }
+  assert.ok(velocityColourOf(70)[0] > velocityColourOf(10)[0]);
+  assert.ok(velocityColourOf(-70)[1] > velocityColourOf(-10)[1]);
+});
+
+test('the radar reads the wind close in round a couplet, where too little rain falls to show', () => {
+  const storm = stormAt({ hook: 0.5 });
+  const couplet = coupletOf(storm);
+  // The middle of the rotation is in the hook's curl: dry on the reflectivity view.
+  assert.equal(colourOf(dbzAt(couplet, storm, day, 40)), undefined);
+  assert.equal(inCouplet(couplet, storm), true);
+  assert.equal(inCouplet({ x: couplet.x + couplet.miles, y: couplet.y }, storm), true);
+  assert.equal(inCouplet({ x: couplet.x + couplet.miles * 2, y: couplet.y }, storm), false);
+});
+
+test('with no hook there is no couplet for the radar to read', () => {
+  const storm = stormAt();
+  assert.equal(inCouplet(rotationOf(storm), storm), false);
+  assert.equal(inCouplet(storm.funnel, storm), false);
+});
+
+test('a tight couplet is read over a smaller patch than a wide one', () => {
+  const full = stormAt({ hook: 1 });
+  const spot = { x: full.funnel.x + 1.5, y: full.funnel.y };
+  assert.equal(inCouplet(spot, full), false);
+  const faint = stormAt({ hook: 0.2 });
+  const wide = coupletOf(faint);
+  assert.equal(inCouplet({ x: wide.x + 1.5, y: wide.y }, faint), true);
+});
+
+test('faster wind hides more of the map, up to the most', () => {
+  assert.equal(windCoverOf(0, 35, 75), 35);
+  assert.equal(windCoverOf(60, 35, 75), 75);
+  assert.equal(windCoverOf(-60, 35, 75), 75);
+  assert.equal(windCoverOf(200, 35, 75), 75);
+  assert.ok(windCoverOf(30, 35, 75) > 35 && windCoverOf(30, 35, 75) < 75);
 });
