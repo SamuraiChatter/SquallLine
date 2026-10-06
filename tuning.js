@@ -81,6 +81,28 @@ export const tuning = {
     dashRadarMiles: 30,
   },
 
+  // Storm spotters. While a storm's hook is at least half grown they call in
+  // what they see, and each report leaves a ring on the map.
+  spotters: {
+    // How many seconds pass between one report and the next.
+    everySeconds: 12,
+
+    // How far a report's ring can be from where the tornado touches down, in
+    // miles. Spotters are looking from a distance. 0 makes every report
+    // exact.
+    offMiles: 1,
+
+    // How many seconds a report's ring stays on the map, fading as it goes.
+    ringSeconds: 20,
+
+    // How many seconds a report's words stay along the bottom of the screen.
+    wordsSeconds: 6,
+
+    // How far the hook has grown when spotters start to say "funnel cloud"
+    // instead of "rotating wall cloud": 0.5 is half grown, 1 is fully grown.
+    funnelCloudHook: 0.85,
+  },
+
   // The TV station that buys the footage. Its name shows on the summary at
   // the end of the day.
   tvStation: 'Twister TV',
