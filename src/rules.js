@@ -69,6 +69,9 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  *   today, in miles an hour. Nothing without the gauge.
  * @property {number} scienceBonus What the day's top wind paid. Worked out
  *   when the day ends.
+ * @property {number} beam How far the radar's beam has turned since the
+ *   chase began, in turns: 2.25 is two and a quarter turns. It starts out
+ *   pointing north and turns clockwise.
  */
 
 /**
@@ -110,7 +113,7 @@ import { drive, nearestSpot, placeOf } from './roads.js';
 /**
  * The numbers a whole run plays by: what the days share, each day's own, and
  * the parts the garage sells.
- * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail' | 'anchor' | 'wind'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, days: Day[], parts: Part[] }} RunTuning
+ * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail' | 'anchor' | 'wind'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, radar: Pick<TuningFile['radar'], 'sweepSeconds'>, days: Day[], parts: Part[] }} RunTuning
  */
 
 /**
@@ -387,6 +390,7 @@ export function newGame(tuning, roads) {
     anchoring: false,
     topWind: 0,
     scienceBonus: 0,
+    beam: 0,
   };
 }
 
@@ -559,7 +563,10 @@ export function step(state, steering, dt, tuning, roads) {
   // The storm has nothing left to film, so the day is done.
   if (storm.spent) return endDay({ ...state, storm }, tuning);
 
-  return battered(driveOrFilm({ ...state, storm }, steering, dt, tuning, roads), dt, tuning);
+  // The radar's beam turns on. Never quicker than ten turns a second,
+  // whatever the tuning file says.
+  const beam = state.beam + dt / Math.max(0.1, tuning.radar.sweepSeconds);
+  return battered(driveOrFilm({ ...state, storm, beam }, steering, dt, tuning, roads), dt, tuning);
 }
 
 /**
