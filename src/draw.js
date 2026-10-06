@@ -3,7 +3,7 @@
 
 import { tuning } from '../tuning.js';
 import { squareMiles } from './map.js';
-import { beamPassed, bearingOf, colourOf, coverOf, dbzAt, rotationOf } from './radar.js';
+import { beamPassed, bearingOf, colourOf, coverOf, dbzAt, inCouplet, rotationOf, velocityAt, velocityColourOf, windCoverOf } from './radar.js';
 import { dangerRingMiles, radarMarks } from './rules.js';
 
 /**
@@ -85,6 +85,20 @@ export function draw(ctx, state, wholeTerritory, map, day) {
   // Back to pixels for the minimap. It stands in for the whole-territory
   // view, so it is only there while the view follows the car on a chase.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // Which of the radar's pictures is showing, and the key for the other.
+  if (!state.briefing && !state.dayOver) {
+    ctx.font = '26px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    const words = state.velocityView ? 'Radar: velocity (V: reflectivity)' : 'Radar: reflectivity (V: velocity)';
+    const top = 30 + Math.round((tuning.minimapPixels * tuning.territoryMilesTall) / tuning.territoryMilesWide) + 14;
+    // A dark edge round the letters keeps them readable over the map.
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#05080c';
+    ctx.strokeText(words, width - 30, top);
+    ctx.fillStyle = '#a9b8c4';
+    ctx.fillText(words, width - 30, top);
+  }
   if (!wholeTerritory && !state.dayOver) drawMinimap(ctx, state, map, pixelsPerMile, day);
 }
 
@@ -187,6 +201,12 @@ export function drawDashRadar(ctx, state, box, day) {
   ctx.lineWidth = 6;
   ctx.strokeStyle = '#39424c';
   ctx.strokeRect(box.left, box.top, box.wide, box.tall);
+  // Which picture the dash radar is showing.
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.font = '22px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(state.velocityView ? 'Velocity (V)' : 'Reflectivity (V)', box.left + 10, box.top + box.tall - 8);
 }
 
 /**
@@ -274,10 +294,30 @@ export function drawMap(ctx, map, wholeTerritory, middle, pixelsPerMile) {
   ctx.restore();
 }
 
-// The radar picture: one pixel for each square of the territory that is
-// tuning.radar.pixelMiles across, north at the top. The map, the minimap and
-// the dash radar all show this one picture. It only changes where the radar's
-// beam passes, so it lags a little behind the real storm.
+// The radar's two pictures, reflectivity (the rain) and velocity (the wind):
+// one pixel for each square of the territory that is tuning.radar.pixelMiles
+// across, north at the top. The map, the minimap and the dash radar all show
+// the same one of the two. They only change where the radar's beam passes, so
+// they lag a little behind the real storm.
+
+/**
+ * One of the radar's pictures, kept as pixels and as a canvas to draw from.
+ * @typedef {{ canvas: HTMLCanvasElement, to: CanvasRenderingContext2D, image: ImageData }} RadarPicture
+ */
+
+/**
+ * @param {number} wide
+ * @param {number} tall
+ * @returns {RadarPicture}
+ */
+function radarPicture(wide, tall) {
+  const canvas = document.createElement('canvas');
+  canvas.width = wide;
+  canvas.height = tall;
+  const to = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
+  return { canvas, to, image: to.createImageData(wide, tall) };
+}
+
 const radar = (() => {
   const { pixelMiles, site } = tuning.radar;
   const wide = Math.ceil(tuning.territoryMilesWide / pixelMiles);
@@ -296,10 +336,10 @@ const radar = (() => {
     spotOf,
     // Which way each pixel is from the radar.
     bearings: Float32Array.from({ length: wide * tall }, (_, k) => bearingOf(spotOf(k), site)),
-    /** @type {HTMLCanvasElement | undefined} */
-    canvas: undefined,
-    /** @type {ImageData | undefined} */
-    image: undefined,
+    /** @type {RadarPicture | undefined} */
+    reflectivity: undefined,
+    /** @type {RadarPicture | undefined} */
+    velocity: undefined,
     /** @type {import('./rules.js').Tuning | undefined} The day it shows. */
     day: undefined,
     // How far the beam had turned when the picture was last brought up to
@@ -309,22 +349,18 @@ const radar = (() => {
 })();
 
 /**
- * Brings the radar picture up to date: the pixels the beam has passed over
+ * Brings the radar's pictures up to date: the pixels the beam has passed over
  * since last time are painted again, as the storm is now. Call it once a
  * frame, before painting.
  * @param {import('./rules.js').GameState} state
  * @param {import('./rules.js').Tuning} day The numbers today plays by.
  */
 export function sweepRadar(state, day) {
-  if (!radar.canvas) {
-    radar.canvas = document.createElement('canvas');
-    radar.canvas.width = radar.wide;
-    radar.canvas.height = radar.tall;
-  }
-  const to = /** @type {CanvasRenderingContext2D} */ (radar.canvas.getContext('2d'));
-  radar.image ??= to.createImageData(radar.wide, radar.tall);
-  const { data } = radar.image;
-  const { hookDbz, lightRainCovers, heavyRainCovers } = tuning.radar;
+  const reflectivity = (radar.reflectivity ??= radarPicture(radar.wide, radar.tall));
+  const velocity = (radar.velocity ??= radarPicture(radar.wide, radar.tall));
+  const { data } = reflectivity.image;
+  const wind = velocity.image.data;
+  const { hookDbz, lightRainCovers, heavyRainCovers, site } = tuning.radar;
   const { storm, beam } = state;
 
   // A new day, or a day started over, begins with the whole picture painted,
@@ -339,27 +375,44 @@ export function sweepRadar(state, day) {
   for (let k = 0; k < radar.bearings.length; k++) {
     if (!beamPassed(radar.bearings[k], beam, turned)) continue;
     // The rain at the middle of the pixel colours the whole pixel.
-    const dbz = dbzAt(radar.spotOf(k), storm, day, hookDbz, seed);
+    const spot = radar.spotOf(k);
+    const dbz = dbzAt(spot, storm, day, hookDbz, seed);
     const colour = colourOf(dbz);
     const at = k * 4;
-    if (!colour) {
-      data[at + 3] = 0;
+    // Heavier rain hides more of the map under it.
+    const cover = colour ? coverOf(dbz, lightRainCovers, heavyRainCovers) : 0;
+    if (colour) {
+      data[at] = colour[1];
+      data[at + 1] = colour[2];
+      data[at + 2] = colour[3];
+    }
+    data[at + 3] = 2.55 * cover;
+
+    // The velocity picture covers the same pixels as the rain and hides as
+    // much of the map. It also shows the wind close in round the couplet,
+    // rain or no rain, brighter the faster it blows.
+    const near = inCouplet(spot, storm);
+    if (!colour && !near) {
+      wind[at + 3] = 0;
       continue;
     }
-    data[at] = colour[1];
-    data[at + 1] = colour[2];
-    data[at + 2] = colour[3];
-    // Heavier rain hides more of the map under it.
-    data[at + 3] = 2.55 * coverOf(dbz, lightRainCovers, heavyRainCovers);
+    const mph = velocityAt(spot, storm, site, seed);
+    const windColour = velocityColourOf(mph);
+    wind[at] = windColour[0];
+    wind[at + 1] = windColour[1];
+    wind[at + 2] = windColour[2];
+    wind[at + 3] = 2.55 * Math.max(cover, near ? windCoverOf(mph, lightRainCovers, heavyRainCovers) : 0);
   }
-  to.putImageData(radar.image, 0, 0);
+  reflectivity.to.putImageData(reflectivity.image, 0, 0);
+  velocity.to.putImageData(velocity.image, 0, 0);
 }
 
 /**
  * Paints the storm the way a radar shows it: blocky pixels coloured by how
  * hard it is raining, from light green through yellow and red to the purple
- * of the hail core, with the map showing through. The radar's beam turns
- * over it.
+ * of the hail core, with the map showing through. In the velocity view the
+ * same pixels are coloured by the wind: green toward the radar, red away.
+ * The radar's beam turns over it.
  * @param {CanvasRenderingContext2D} ctx Already set up to draw in miles.
  * @param {import('./rules.js').GameState} state
  * @param {number} pixelsPerMile
@@ -367,13 +420,14 @@ export function sweepRadar(state, day) {
  */
 function drawStorm(ctx, state, pixelsPerMile, day) {
   const { storm } = state;
-  if (radar.canvas) {
+  const picture = state.velocityView ? radar.velocity : radar.reflectivity;
+  if (picture) {
     ctx.save();
     // The picture's first row is the north edge, so it is drawn upside down
     // in a view where north is up. No smoothing: the pixels stay square.
     ctx.scale(1, -1);
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(radar.canvas, -tuning.territoryMilesWide / 2, -tuning.territoryMilesTall / 2, radar.wide * radar.pixelMiles, radar.tall * radar.pixelMiles);
+    ctx.drawImage(picture.canvas, -tuning.territoryMilesWide / 2, -tuning.territoryMilesTall / 2, radar.wide * radar.pixelMiles, radar.tall * radar.pixelMiles);
     ctx.restore();
   }
 
