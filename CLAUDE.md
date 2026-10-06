@@ -29,6 +29,9 @@ GitHub Pages publishes `main` at https://samuraichatter.github.io/SquallLine/.
   is where the tests check them.
 - `src/roads.js` holds the road network and how the car drives along it. Like
   the rules, it never touches the canvas or the page, and has its own tests.
+- `src/radar.js` holds the radar picture: how hard it is raining at any spot
+  near a storm, and the colour a radar gives it. It never touches the canvas
+  or the page either, and has its own tests.
 - `src/draw.js` paints the map view, `src/windshield.js` the filming view, and
   `src/hud.js` the money, damage meter, pause screen and day summary over
   both, and the title screen, briefing and final score around them.
