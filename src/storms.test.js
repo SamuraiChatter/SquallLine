@@ -109,6 +109,7 @@ test('a village is entered only from close by', () => {
 const storm = {
   path,
   tornadoes: [{ start: 0.25, end: 0.4, strength: 2 }, { start: 0.6, end: 0.8, strength: 5 }],
+  falseAlarms: [{ start: 0.05, end: 0.15 }, { start: 0.45, end: 0.5 }],
 };
 
 test('a saved storm reads back the same', () => {
@@ -148,5 +149,59 @@ test('a storm whose tornadoes overlap or run backwards is turned away', () => {
 });
 
 test('a storm with no tornadoes yet can still be saved and read', () => {
-  assert.deepEqual(readStorm(writeStorm({ path, tornadoes: [] })), { path, tornadoes: [] });
+  assert.deepEqual(readStorm(writeStorm({ path, tornadoes: [], falseAlarms: [] })), { path, tornadoes: [], falseAlarms: [] });
+});
+
+// False alarms in storm files.
+
+test('a storm file saved before there were false alarms reads with none', () => {
+  const old = JSON.stringify({ path, tornadoes: storm.tornadoes });
+  assert.deepEqual(readStorm(old), { path, tornadoes: storm.tornadoes, falseAlarms: [] });
+});
+
+test('a storm with only false alarms can be saved and read', () => {
+  const quiet = { path, tornadoes: [], falseAlarms: [{ start: 0.2, end: 0.4 }] };
+  assert.deepEqual(readStorm(writeStorm(quiet)), quiet);
+});
+
+test('a false alarm can sit right up against a tornado without touching it', () => {
+  const tornadoes = [{ start: 0.4, end: 0.6, strength: 1 }];
+  const falseAlarms = [{ start: 0.2, end: 0.39 }, { start: 0.61, end: 0.8 }];
+  assert.deepEqual(readStorm(JSON.stringify({ path, tornadoes, falseAlarms })).falseAlarms, falseAlarms);
+});
+
+test('a storm whose false alarm overlaps a tornado is turned away, and the message says why', () => {
+  const tornadoes = [{ start: 0.4, end: 0.6, strength: 1 }];
+  const broken = [
+    [{ start: 0.3, end: 0.5 }],
+    [{ start: 0.5, end: 0.7 }],
+    [{ start: 0.45, end: 0.55 }],
+    [{ start: 0.3, end: 0.7 }],
+    [{ start: 0.3, end: 0.4 }],
+    [{ start: 0.6, end: 0.7 }],
+  ];
+  for (const falseAlarms of broken) {
+    assert.throws(() => readStorm(JSON.stringify({ path, tornadoes, falseAlarms })), /false alarm overlaps a tornado/, JSON.stringify(falseAlarms));
+  }
+});
+
+test('a storm whose false alarms overlap each other, run backwards or leave the path is turned away', () => {
+  const broken = [
+    [{ start: 0.1, end: 0.3 }, { start: 0.2, end: 0.4 }],
+    [{ start: 0.5, end: 0.6 }, { start: 0.1, end: 0.2 }],
+    [{ start: 0.5, end: 0.4 }],
+    [{ start: -0.1, end: 0.2 }],
+    [{ start: 0.8, end: 1.2 }],
+    [{ start: '0.1', end: 0.2 }],
+    [null],
+    'none',
+  ];
+  for (const falseAlarms of broken) {
+    assert.throws(() => readStorm(JSON.stringify({ path, tornadoes: [], falseAlarms })), /false alarms/, JSON.stringify(falseAlarms));
+  }
+});
+
+test('a storm with too many false alarms is turned away', () => {
+  const falseAlarms = Array.from({ length: 21 }, (_, i) => ({ start: i * 0.04, end: i * 0.04 + 0.01 }));
+  assert.throws(() => readStorm(JSON.stringify({ path, tornadoes: [], falseAlarms })), /too many false alarms/);
 });
