@@ -137,7 +137,7 @@ export function drawWindshield(ctx, state, day) {
   // art/dash-radar.png: the dash radar stands on the dashboard, to the right.
   if (day.dashRadar) {
     const box = { left: width * 0.72, top: height * 0.6, wide: width * 0.22, tall: height * 0.25 };
-    drawDashRadar(ctx, state, box);
+    drawDashRadar(ctx, state, box, day);
     label(ctx, 'art/dash-radar.png', box.left + 10, box.top + 8);
   }
 

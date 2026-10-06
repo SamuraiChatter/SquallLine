@@ -12,8 +12,9 @@ const dollars = (amount) => `$${Math.round(amount).toLocaleString('en-US')}`;
 
 // Where the vehicle's picture goes on the screen, in pixels.
 const vehicle = { left: 90, top: 330, wide: 800, tall: 420 };
-// Where the list of parts goes, and how tall each part's row is. Ten rows fit.
-const list = { left: 960, top: 150, wide: 880, rowTall: 84 };
+// Where the list of parts goes, and how tall each part's row is. Eleven rows
+// fit.
+const list = { left: 960, top: 150, wide: 880, rowTall: 76 };
 
 /**
  * Paints the garage.

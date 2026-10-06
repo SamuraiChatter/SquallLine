@@ -3,8 +3,8 @@
 
 import { tuning } from '../tuning.js';
 import { squareMiles } from './map.js';
-import { beamPassed, bearingOf, colourOf, coverOf, dbzAt } from './radar.js';
-import { dangerRingMiles } from './rules.js';
+import { beamPassed, bearingOf, colourOf, coverOf, dbzAt, rotationOf } from './radar.js';
+import { dangerRingMiles, radarMarks } from './rules.js';
 
 /**
  * Paints the game as it is right now.
@@ -43,7 +43,7 @@ export function draw(ctx, state, wholeTerritory, map, day) {
   ctx.strokeStyle = '#5b7488';
   ctx.strokeRect(-halfWide, -halfTall, halfWide * 2, halfTall * 2);
 
-  drawStorm(ctx, state, pixelsPerMile);
+  drawStorm(ctx, state, pixelsPerMile, day);
   drawReports(ctx, state, pixelsPerMile);
 
   if (storm.tornado > 0) {
@@ -85,7 +85,7 @@ export function draw(ctx, state, wholeTerritory, map, day) {
   // Back to pixels for the minimap. It stands in for the whole-territory
   // view, so it is only there while the view follows the car on a chase.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (!wholeTerritory && !state.dayOver) drawMinimap(ctx, state, map, pixelsPerMile);
+  if (!wholeTerritory && !state.dayOver) drawMinimap(ctx, state, map, pixelsPerMile, day);
 }
 
 // The minimap's map: the county lines and main roads of the whole territory.
@@ -102,8 +102,9 @@ let minimapMap;
  * @param {import('./map.js').GameMap} map
  * @param {number} viewPixelsPerMile How many pixels a mile takes up in the
  *   main view.
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
  */
-function drawMinimap(ctx, state, map, viewPixelsPerMile) {
+function drawMinimap(ctx, state, map, viewPixelsPerMile, day) {
   const { width, height } = ctx.canvas;
   const { car } = state;
   const wide = tuning.minimapPixels;
@@ -134,7 +135,7 @@ function drawMinimap(ctx, state, map, viewPixelsPerMile) {
   // Draw in miles with north at the top, as the map does.
   ctx.translate(left + wide / 2, top + tall / 2);
   ctx.scale(pixelsPerMile, -pixelsPerMile);
-  drawStorm(ctx, state, pixelsPerMile);
+  drawStorm(ctx, state, pixelsPerMile, day);
   drawReports(ctx, state, pixelsPerMile);
   // What the main view shows, and the car in the middle of it.
   const viewWide = width / viewPixelsPerMile;
@@ -160,8 +161,9 @@ function drawMinimap(ctx, state, map, viewPixelsPerMile) {
  * @param {import('./rules.js').GameState} state
  * @param {{ left: number, top: number, wide: number, tall: number }} box
  *   Where on the screen it goes, in pixels.
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
  */
-export function drawDashRadar(ctx, state, box) {
+export function drawDashRadar(ctx, state, box, day) {
   const pixelsPerMile = box.wide / tuning.camera.dashRadarMiles;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -175,7 +177,7 @@ export function drawDashRadar(ctx, state, box) {
   ctx.translate(box.left + box.wide / 2, box.top + box.tall / 2);
   ctx.scale(pixelsPerMile, -pixelsPerMile);
   ctx.translate(-state.car.x, -state.car.y);
-  drawStorm(ctx, state, pixelsPerMile);
+  drawStorm(ctx, state, pixelsPerMile, day);
   ctx.beginPath();
   ctx.arc(state.car.x, state.car.y, 7 / pixelsPerMile, 0, Math.PI * 2);
   ctx.fillStyle = '#ffd24a';
@@ -361,8 +363,9 @@ export function sweepRadar(state, day) {
  * @param {CanvasRenderingContext2D} ctx Already set up to draw in miles.
  * @param {import('./rules.js').GameState} state
  * @param {number} pixelsPerMile
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
  */
-function drawStorm(ctx, state, pixelsPerMile) {
+function drawStorm(ctx, state, pixelsPerMile, day) {
   const { storm } = state;
   if (radar.canvas) {
     ctx.save();
@@ -394,6 +397,8 @@ function drawStorm(ctx, state, pixelsPerMile) {
   ctx.restore();
 
   const { x: hookX, y: hookY } = storm.funnel;
+  // How big the white tornado marker is, in miles. Nothing with no tornado.
+  let marker = 0;
   // The tornado marker sits at the hook's tip: a white triangle, point down.
   // A stronger tornado has a bigger one, and it shrinks as the tornado dies.
   if (storm.tornado > 0) {
@@ -406,5 +411,31 @@ function drawStorm(ctx, state, pixelsPerMile) {
     ctx.closePath();
     ctx.fillStyle = '#ffffff';
     ctx.fill();
+    marker = size;
+  }
+
+  // What the phased array radar marks. Both keep a size that can be seen on
+  // the minimap.
+  const marks = radarMarks(storm, day);
+  ctx.lineWidth = 3 / pixelsPerMile;
+  if (marks.rotation) {
+    // A yellow circle on the storm's rotation: this storm is turning.
+    const middle = rotationOf(storm);
+    ctx.beginPath();
+    ctx.arc(middle.x, middle.y, Math.max(1.6, 9 / pixelsPerMile), 0, Math.PI * 2);
+    ctx.strokeStyle = '#ffd24a';
+    ctx.stroke();
+  }
+  if (marks.vortex) {
+    // A red triangle outline, point down, at the hook's tip: this one is
+    // real. It goes round the white marker once the tornado is down.
+    const size = Math.max(0.45, 7 / pixelsPerMile, marker + 0.15);
+    ctx.beginPath();
+    ctx.moveTo(hookX, hookY - size);
+    ctx.lineTo(hookX - size, hookY + size);
+    ctx.lineTo(hookX + size, hookY + size);
+    ctx.closePath();
+    ctx.strokeStyle = '#ff4d4d';
+    ctx.stroke();
   }
 }
