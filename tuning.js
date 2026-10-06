@@ -159,7 +159,8 @@ export const tuning = {
   //
   // stormFile: the name of a storm file saved from the design mode and put
   //   in the storms folder, such as 'my-storm.json'. Leave it empty ('') to
-  //   use the path and tornadoes typed in just below it instead.
+  //   use the path, tornadoes and false alarms typed in just below it
+  //   instead. A storm file brings its own, and those typed here are ignored.
   // path: the corners of the storm's path, from where it starts to where it
   //   ends. Each is so many miles east (x) and north (y) of the middle of
   //   the territory. A minus number means west or south.
@@ -167,6 +168,15 @@ export const tuning = {
   //   down and where it dies, and its strength from 0 for EF0 to 5 for EF5.
   //   0 is the start of the path, 1 is the end, 0.5 is half way. Keep them
   //   in order, with a gap between one ending and the next starting.
+  // falseAlarms: leave this out for a day with none. A false alarm is a
+  //   stretch of the path where the hook grows, holds and then fades away
+  //   with no tornado, so the player cannot trust every hook. One line for
+  //   each, the same way as a tornado but with no strength: where along the
+  //   path the hook is fully grown, and where it starts to fade. For example:
+  //     falseAlarms: [{ start: 0.05, end: 0.12 }],
+  //   A false alarm must not overlap a tornado or another false alarm. Leave
+  //   a gap as long as storm.hookLead between a false alarm and the next
+  //   tornado if the hook should fade away in between.
   // footage.ringMiles: how many miles out from the tornado the footage ring
   //   reaches. Footage shot from outside the ring pays nothing. 0 means the
   //   ring is the tornado itself, so nothing filmed from outside it pays.
