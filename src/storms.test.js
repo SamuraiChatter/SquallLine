@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { addTornado, moveTornadoEnd, pathMiles, placeAlong, readStorm, shareNearest, townsEntered, writeStorm } from './storms.js';
+import { addFalseAlarm, addTornado, moveTornadoEnd, pathMiles, placeAlong, readStorm, shareNearest, townsEntered, whyNoFalseAlarm, whyNoTornado, writeStorm } from './storms.js';
 
 // A path with easy numbers: 10 miles east, then 10 miles north.
 const path = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }];
@@ -204,4 +204,58 @@ test('a storm whose false alarms overlap each other, run backwards or leave the 
 test('a storm with too many false alarms is turned away', () => {
   const falseAlarms = Array.from({ length: 21 }, (_, i) => ({ start: i * 0.04, end: i * 0.04 + 0.01 }));
   assert.throws(() => readStorm(JSON.stringify({ path, tornadoes: [], falseAlarms })), /too many false alarms/);
+});
+
+// Placing false alarms in the design mode.
+
+const designed = {
+  path,
+  tornadoes: [{ start: 0.4, end: 0.6, strength: 1 }],
+  falseAlarms: [{ start: 0.1, end: 0.2 }],
+};
+
+test('a false alarm can go on a clear stretch of the path, whichever end is marked first', () => {
+  assert.equal(whyNoFalseAlarm(designed, 0.7, 0.8), '');
+  assert.equal(whyNoFalseAlarm(designed, 0.8, 0.7), '');
+  assert.equal(whyNoFalseAlarm(designed, 0.25, 0.35), '');
+});
+
+test('a false alarm cannot go across a tornado, or right up against one', () => {
+  for (const [a, b] of [[0.3, 0.5], [0.5, 0.7], [0.45, 0.55], [0.3, 0.7], [0.61, 0.7], [0.3, 0.39]]) {
+    assert.match(whyNoFalseAlarm(designed, a, b), /overlap a tornado/, `${a} to ${b}`);
+  }
+});
+
+test('a false alarm cannot go across another false alarm', () => {
+  for (const [a, b] of [[0.05, 0.15], [0.15, 0.3], [0.12, 0.18], [0.21, 0.3]]) {
+    assert.match(whyNoFalseAlarm(designed, a, b), /another false alarm/, `${a} to ${b}`);
+  }
+});
+
+test('a false alarm cannot be shorter than the shortest tornado', () => {
+  assert.match(whyNoFalseAlarm(designed, 0.7, 0.71), /longer/);
+});
+
+test('a tornado cannot go across a false alarm, or right up against one', () => {
+  for (const [a, b] of [[0.05, 0.15], [0.15, 0.3], [0.12, 0.18], [0, 0.3], [0.21, 0.3]]) {
+    assert.match(whyNoTornado(designed, a, b), /overlap a false alarm/, `${a} to ${b}`);
+  }
+  assert.equal(whyNoTornado(designed, 0.25, 0.35), '');
+  assert.equal(whyNoTornado(designed, 0.35, 0.25), '');
+});
+
+test('false alarms are kept in order along the path', () => {
+  const more = addFalseAlarm(addFalseAlarm(designed.falseAlarms, 0.8, 0.7), 0.25, 0.3);
+  assert.deepEqual(more, [{ start: 0.1, end: 0.2 }, { start: 0.25, end: 0.3 }, { start: 0.7, end: 0.8 }]);
+  // The list handed in is left as it was.
+  assert.deepEqual(designed.falseAlarms, [{ start: 0.1, end: 0.2 }]);
+});
+
+test('a storm built with these checks is one the game will load', () => {
+  let falseAlarms = designed.falseAlarms;
+  for (const [a, b] of [[0.25, 0.35], [0.65, 0.75], [0.9, 1]]) {
+    if (!whyNoFalseAlarm({ ...designed, falseAlarms }, a, b)) falseAlarms = addFalseAlarm(falseAlarms, a, b);
+  }
+  assert.equal(falseAlarms.length, 4);
+  assert.deepEqual(readStorm(writeStorm({ ...designed, falseAlarms })).falseAlarms, falseAlarms);
 });

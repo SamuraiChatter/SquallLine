@@ -128,6 +128,56 @@ export function addTornado(tornadoes, a, b, strength) {
 }
 
 /**
+ * Whether a stretch of the path overlaps any of some others, or comes closer
+ * to one than the smallest gap.
+ * @param {{ start: number, end: number }[]} others
+ * @param {number} start
+ * @param {number} end
+ */
+function tooClose(others, start, end) {
+  return others.some((other) => start < other.end + leastShare && end > other.start - leastShare);
+}
+
+/**
+ * Why a tornado cannot go between two spots on the path. Empty if it can, as
+ * far as the false alarms go: addTornado then fits it among the tornadoes.
+ * @param {DesignedStorm} storm
+ * @param {number} a One end, as a share of the path.
+ * @param {number} b The other end.
+ */
+export function whyNoTornado(storm, a, b) {
+  return tooClose(storm.falseAlarms, Math.min(a, b), Math.max(a, b)) ? 'A tornado cannot overlap a false alarm. A hook is one or the other.' : '';
+}
+
+/**
+ * Why a false alarm cannot go between two spots on the path. Empty if it
+ * can.
+ * @param {DesignedStorm} storm
+ * @param {number} a One end, as a share of the path.
+ * @param {number} b The other end.
+ */
+export function whyNoFalseAlarm(storm, a, b) {
+  const start = Math.min(a, b);
+  const end = Math.max(a, b);
+  if (tooClose(storm.tornadoes, start, end)) return 'A false alarm cannot overlap a tornado. A hook is one or the other.';
+  if (tooClose(storm.falseAlarms, start, end)) return 'A false alarm cannot overlap another false alarm.';
+  if (end - start < leastShare) return 'A false alarm needs to be longer than that.';
+  return '';
+}
+
+/**
+ * Adds a false alarm between two spots on the path. Ask whyNoFalseAlarm
+ * first whether it can go there.
+ * @param {FalseAlarm[]} falseAlarms
+ * @param {number} a One end, as a share of the path.
+ * @param {number} b The other end.
+ * @returns {FalseAlarm[]} The false alarms in order, with the new one.
+ */
+export function addFalseAlarm(falseAlarms, a, b) {
+  return [...falseAlarms, { start: Math.min(a, b), end: Math.max(a, b) }].sort((one, other) => one.start - other.start);
+}
+
+/**
  * Moves one end of a tornado along the path. It stops short of the tornado's
  * other end, and of the next tornado along.
  * @param {Tornado[]} tornadoes

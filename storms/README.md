@@ -21,9 +21,14 @@ A false alarm is a stretch of the path where the hook grows, holds and then
 fades away with no tornado. On the radar it looks just like the run-up to a
 real tornado.
 
-The design mode cannot draw them yet, so they are typed into the storm file
-by hand. Open the file in a text editor and add a `falseAlarms` list beside
-`tornadoes`:
+In the design mode, press "Add false alarms", then click on the red line
+where the hook is fully grown and again where it starts to fade. Each one is
+listed with the tornadoes, with a button to remove it. The design mode will
+not put a false alarm over a tornado or another false alarm, nor a tornado
+over a false alarm.
+
+They can also be typed into a storm file by hand. Open the file in a text
+editor and add a `falseAlarms` list beside `tornadoes`:
 
 ```json
 {
@@ -40,6 +45,3 @@ by hand. Open the file in a text editor and add a `falseAlarms` list beside
 - A false alarm must not overlap a tornado or another false alarm. The game
   will not load a storm file that breaks this, and says why on the screen.
 - A file with no `falseAlarms` plays as it always did.
-
-Loading a storm into the design mode and saving it again keeps its false
-alarms.

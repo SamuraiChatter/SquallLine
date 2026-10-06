@@ -1,12 +1,12 @@
 // The design mode, at design.html: draw a storm's path on the map by
-// clicking, mark its tornadoes, save it as a storm file and try it in the
-// game. Players are not shown this page.
+// clicking, mark its tornadoes and false alarms, save it as a storm file and
+// try it in the game. Players are not shown this page.
 
 import { tuning } from '../tuning.js';
 import { drawMap } from './draw.js';
 import { loadMap } from './map.js';
 import { funnelOf } from './rules.js';
-import { addTornado, designKey, moveTornadoEnd, placeAlong, readStorm, shareNearest, townsEntered, writeStorm } from './storms.js';
+import { addFalseAlarm, addTornado, designKey, moveTornadoEnd, placeAlong, readStorm, shareNearest, townsEntered, whyNoFalseAlarm, whyNoTornado, writeStorm } from './storms.js';
 
 const canvas = /** @type {HTMLCanvasElement} */ (document.querySelector('canvas'));
 const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
@@ -20,6 +20,7 @@ const { width, height } = canvas;
 const element = (id) => /** @type {T} */ (document.getElementById(id));
 const pathTool = element('path-tool');
 const tornadoTool = element('tornado-tool');
+const alarmTool = element('alarm-tool');
 const hint = element('hint');
 const list = element('tornadoes');
 const message = element('message');
@@ -39,6 +40,8 @@ const reach = 16 / pixelsPerMile;
 
 // The colour of each strength of tornado, from EF0 to EF5.
 const strengthColours = ['#7fd4ff', '#7dff8a', '#ffe14a', '#ffa63a', '#ff5a3a', '#ff3ad0'];
+// The colour of a false alarm: none of the tornadoes'.
+const alarmColour = '#b9a3ff';
 
 /** @type {import('./storms.js').DesignedStorm} */
 let storm = { path: [], tornadoes: [], falseAlarms: [] };
@@ -49,10 +52,12 @@ try {
   // Nothing saved yet, or nothing that can be read: start with a clear map.
 }
 
-// Which tool is in use: drawing the path, or adding tornadoes.
-/** @type {'path' | 'tornado'} */
+// Which tool is in use: drawing the path, adding tornadoes, or adding false
+// alarms.
+/** @type {'path' | 'tornado' | 'alarm'} */
 let tool = 'path';
-// Where the tornado being added touches down, once its first click is made.
+// Where the tornado being added touches down, or the false alarm being added
+// starts, once its first click is made.
 /** @type {number | null} */
 let touchdown = null;
 // What is being dragged: a corner of the path, or one end of a tornado.
@@ -133,16 +138,21 @@ function changed() {
   listTornadoes();
 }
 
-/** @param {'path' | 'tornado'} next */
+// What the panel says about each tool.
+const hints = {
+  path: 'Click on the map to add a corner to the storm’s path. Drag a corner to move it. Right-click a corner to take it away.',
+  tornado: 'Click on the red line where a tornado touches down, then where it dies. Drag either end to move it. Right-click an end to take the tornado away.',
+  alarm: 'Click on the red line where a false alarm’s hook is fully grown, then where it starts to fade. No tornado comes of it. Take one away with its Remove button.',
+};
+
+/** @param {'path' | 'tornado' | 'alarm'} next */
 function pick(next) {
   tool = next;
   touchdown = null;
   pathTool.setAttribute('aria-pressed', String(tool === 'path'));
   tornadoTool.setAttribute('aria-pressed', String(tool === 'tornado'));
-  hint.textContent =
-    tool === 'path'
-      ? 'Click on the map to add a corner to the storm’s path. Drag a corner to move it. Right-click a corner to take it away.'
-      : 'Click on the red line where a tornado touches down, then where it dies. Drag either end to move it. Right-click an end to take the tornado away.';
+  alarmTool.setAttribute('aria-pressed', String(tool === 'alarm'));
+  hint.textContent = hints[tool];
   draw();
 }
 
@@ -159,6 +169,8 @@ canvas.addEventListener('pointerdown', (event) => {
     dragging = { corner };
   } else if (storm.path.length < 2) {
     say('Draw the storm’s path first.');
+  } else if (tool === 'alarm') {
+    markFalseAlarm(place);
   } else {
     dragging = tornadoEndAt(place);
     if (!dragging) markTornado(place);
@@ -180,11 +192,32 @@ function markTornado(place) {
     touchdown = nearest.share;
     say('Now click where the tornado dies.');
   } else {
+    const why = whyNoTornado(storm, touchdown, nearest.share);
     // A new tornado is as strong as the last one made.
     const strength = storm.tornadoes.at(-1)?.strength ?? 2;
-    const tornadoes = addTornado(storm.tornadoes, touchdown, nearest.share, strength);
-    if (tornadoes === storm.tornadoes) say('There is no room for a tornado there.');
+    const tornadoes = why ? storm.tornadoes : addTornado(storm.tornadoes, touchdown, nearest.share, strength);
+    if (tornadoes === storm.tornadoes) say(why || 'There is no room for a tornado there.');
     storm.tornadoes = tornadoes;
+    touchdown = null;
+  }
+}
+
+/**
+ * A click with the false alarm tool: the first marks where a false alarm's
+ * hook is fully grown, the second where it starts to fade.
+ * @param {import('./rules.js').Point} place
+ */
+function markFalseAlarm(place) {
+  const nearest = shareNearest(track(), place);
+  if (nearest.miles > reach * 2) {
+    say('Click on the red line. That is where the hook curls.');
+  } else if (touchdown === null) {
+    touchdown = nearest.share;
+    say('Now click where the false alarm starts to fade.');
+  } else {
+    const why = whyNoFalseAlarm(storm, touchdown, nearest.share);
+    if (why) say(why);
+    else storm.falseAlarms = addFalseAlarm(storm.falseAlarms, touchdown, nearest.share);
     touchdown = null;
   }
 }
@@ -196,7 +229,16 @@ canvas.addEventListener('pointermove', (event) => {
     storm.path[dragging.corner] = place;
   } else {
     const { share } = shareNearest(track(), place);
-    storm.tornadoes = moveTornadoEnd(storm.tornadoes, dragging.tornado, dragging.which, share);
+    const moved = moveTornadoEnd(storm.tornadoes, dragging.tornado, dragging.which, share);
+    // A tornado's end cannot be dragged onto a false alarm: it stays where it
+    // last fitted.
+    const was = storm.tornadoes[dragging.tornado];
+    const { start, end } = moved[dragging.tornado];
+    const why = whyNoTornado(storm, start, end);
+    // A storm file typed by hand can have the two closer together than this
+    // page allows. Such a tornado can still be dragged, to pull it clear.
+    if (why && !whyNoTornado(storm, was.start, was.end)) say(why);
+    else storm.tornadoes = moved;
   }
   changed();
 });
@@ -212,14 +254,14 @@ canvas.addEventListener('contextmenu', (event) => {
   if (tool === 'path') {
     const corner = cornerAt(place);
     if (corner >= 0) storm.path.splice(corner, 1);
-  } else {
+  } else if (tool === 'tornado') {
     const end = tornadoEndAt(place);
     if (end) storm.tornadoes.splice(end.tornado, 1);
   }
   changed();
 });
 
-// Escape forgets a tornado that is only half marked.
+// Escape forgets a tornado or a false alarm that is only half marked.
 addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
   touchdown = null;
@@ -229,6 +271,7 @@ addEventListener('keydown', (event) => {
 
 pathTool.addEventListener('click', () => pick('path'));
 tornadoTool.addEventListener('click', () => pick('tornado'));
+alarmTool.addEventListener('click', () => pick('alarm'));
 
 /** The name typed in the name box, made safe to use as a file name. */
 const fileName = () => `${nameBox.value.replace(/[^a-zA-Z0-9_-]/g, '') || 'my-storm'}.json`;
@@ -275,45 +318,63 @@ element('clear').addEventListener('click', () => {
   changed();
 });
 
-/** Lists the tornadoes in the panel, each with its strength and warnings. */
+/**
+ * Lists the tornadoes and the false alarms in the panel, in the order the
+ * storm comes to them. A tornado has its strength and any warnings.
+ */
 function listTornadoes() {
-  list.replaceChildren(
-    ...storm.tornadoes.map((tornado, index) => {
-      const item = document.createElement('li');
-      const row = document.createElement('div');
-      row.className = 'row';
-      const name = document.createElement('span');
-      name.textContent = `Tornado ${index + 1}`;
-      name.style.color = strengthColours[tornado.strength];
+  /**
+   * A row of the list: a name, anything else, and a button to take it away.
+   * @param {string} words
+   * @param {string} colour
+   * @param {() => void} takeAway
+   * @param {HTMLElement[]} [more]
+   */
+  const row = (words, colour, takeAway, more = []) => {
+    const item = document.createElement('li');
+    const line = document.createElement('div');
+    line.className = 'row';
+    const name = document.createElement('span');
+    name.textContent = words;
+    name.style.color = colour;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'Remove';
+    remove.setAttribute('aria-label', `Remove ${words.toLowerCase()}`);
+    remove.addEventListener('click', () => {
+      takeAway();
+      changed();
+    });
+    line.append(name, ...more, remove);
+    item.append(line);
+    return item;
+  };
 
-      const strength = document.createElement('select');
-      strength.setAttribute('aria-label', `Strength of tornado ${index + 1}`);
-      for (let ef = 0; ef <= 5; ef++) strength.add(new Option(`EF${ef}`, String(ef), false, ef === tornado.strength));
-      strength.addEventListener('change', () => {
-        tornado.strength = Number(strength.value);
-        changed();
-      });
+  const tornadoes = storm.tornadoes.map((tornado, index) => {
+    const strength = document.createElement('select');
+    strength.setAttribute('aria-label', `Strength of tornado ${index + 1}`);
+    for (let ef = 0; ef <= 5; ef++) strength.add(new Option(`EF${ef}`, String(ef), false, ef === tornado.strength));
+    strength.addEventListener('change', () => {
+      tornado.strength = Number(strength.value);
+      changed();
+    });
+    const item = row(`Tornado ${index + 1}`, strengthColours[tornado.strength], () => storm.tornadoes.splice(index, 1), [strength]);
 
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.textContent = 'Remove';
-      remove.addEventListener('click', () => {
-        storm.tornadoes.splice(index, 1);
-        changed();
-      });
-      row.append(name, strength, remove);
-      item.append(row);
-
-      const towns = townsEntered(track(), tornado, map.places, tuning.design.townMiles);
-      if (towns.length) {
-        const warning = document.createElement('p');
-        warning.className = 'warning';
-        warning.textContent = `Warning: its path enters ${towns.join(', ')}. Tornado paths stay over open country.`;
-        item.append(warning);
-      }
-      return item;
-    }),
-  );
+    const towns = townsEntered(track(), tornado, map.places, tuning.design.townMiles);
+    if (towns.length) {
+      const warning = document.createElement('p');
+      warning.className = 'warning';
+      warning.textContent = `Warning: its path enters ${towns.join(', ')}. Tornado paths stay over open country.`;
+      item.append(warning);
+    }
+    return { start: tornado.start, item };
+  });
+  // Nothing touches down in a false alarm, so a town in its way is no worry.
+  const falseAlarms = storm.falseAlarms.map((falseAlarm, index) => ({
+    start: falseAlarm.start,
+    item: row(`False alarm ${index + 1}`, alarmColour, () => storm.falseAlarms.splice(index, 1)),
+  }));
+  list.replaceChildren(...[...tornadoes, ...falseAlarms].sort((one, other) => one.start - other.start).map(({ item }) => item));
 }
 
 /**
@@ -379,7 +440,7 @@ function draw() {
     ctx.fill();
   }
 
-  const { path, tornadoes } = storm;
+  const { path, tornadoes, falseAlarms } = storm;
   if (path.length >= 2) {
     // The storm's path, as a dashed line.
     trace(path, 0, 1);
@@ -421,7 +482,24 @@ function draw() {
     write(`EF${tornado.strength}`, placeAlong(track(), (tornado.start + tornado.end) / 2), colour);
   }
 
-  // Where the tornado being added touches down.
+  // Each false alarm: a thick stretch of the red line in a colour of its
+  // own, with a round end where a tornado has a square one.
+  for (const falseAlarm of falseAlarms) {
+    trace(track(), falseAlarm.start, falseAlarm.end);
+    ctx.lineWidth = 8 * pixel;
+    ctx.strokeStyle = alarmColour;
+    ctx.stroke();
+    ctx.fillStyle = alarmColour;
+    for (const share of [falseAlarm.start, falseAlarm.end]) {
+      const { x, y } = placeAlong(track(), share);
+      ctx.beginPath();
+      ctx.arc(x, y, 8 * pixel, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    write('False alarm', placeAlong(track(), (falseAlarm.start + falseAlarm.end) / 2), alarmColour);
+  }
+
+  // Where the tornado or the false alarm being added starts.
   if (touchdown !== null && path.length >= 2) {
     const { x, y } = placeAlong(track(), touchdown);
     ctx.strokeStyle = '#ffffff';
