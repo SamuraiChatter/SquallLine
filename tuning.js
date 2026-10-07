@@ -346,6 +346,8 @@ export const tuning = {
   // radarMarks: with this, the radar marks a storm's rotation with a yellow
   //   circle, false alarms too, and a real tornado that is about to touch
   //   down or is on the ground with a red triangle.
+  // offRoad: with this, the vehicle leaves the roads: the arrows drive it
+  //   any way at all, across fields and roads alike, at its normal speed.
   parts: [
     {
       id: 'lexan',
@@ -458,6 +460,16 @@ export const tuning = {
       at: { x: 0.15, y: 0.62 },
       sweepTimes: 5,
       radarMarks: true,
+    },
+    {
+      id: 'tires',
+      name: 'Off-road tires',
+      price: 10000,
+      does: 'Leave the roads behind. Drive any way, across fields and all.',
+      needs: '',
+      picture: 'art/part-tires.png',
+      at: { x: 0.15, y: 0.9 },
+      offRoad: true,
     },
   ],
 

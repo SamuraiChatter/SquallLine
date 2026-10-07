@@ -251,8 +251,9 @@ function frame(now) {
   // The briefing sits over the whole territory, with the storm coming in.
   if (state.filming) drawWindshield(ctx, state, game);
   else {
-    // The next junction ahead, while there is a chase to drive.
-    const ahead = state.briefing || state.dayOver ? null : junctionAhead(map.roads, state.road, steering);
+    // The next junction ahead, while there is a chase to drive. A car with
+    // off-road tires does not keep to the roads, so it has none.
+    const ahead = state.briefing || state.dayOver || game.offRoad ? null : junctionAhead(map.roads, state.road, steering);
     draw(ctx, state, wholeTerritory || state.briefing, map, game, ahead);
   }
   drawMoney(ctx, state);

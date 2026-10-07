@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { tuning as tuningFile } from '../tuning.js';
 import { buildNetwork } from './roads.js';
 import { anchorWait, windMph, beginChase, buy, dangerRingMiles, dayTuning, freePlay, insideTornado, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, radarMarks, readSave, resume, runFinished, saveOf, spotterReport, spotterSees, spotters, step, strongest, toggleAnchor, toggleFilming, toggleRadarView, tornadoInFrame, whyNotBuy, windDamagePerSecond } from './rules.js';
 
@@ -7,6 +8,10 @@ import { anchorWait, windMph, beginChase, buy, dangerRingMiles, dayTuning, freeP
 const tuning = {
   carMilesPerSecond: 2,
   carStart: { x: 0, y: 0 },
+  // As big as the roads below: 30 miles each way east and west, 20 north
+  // and south.
+  territoryMilesWide: 60,
+  territoryMilesTall: 40,
   storm: { path: [{ x: 0, y: 0 }, { x: 1, y: 0 }], milesPerSecond: 1, hookLead: 0.1, tornadoes: [] },
   camera: { viewfinderDegrees: 20, panDegreesPerSecond: 30 },
   footage: { ringMiles: 10, payAtEdge: 10, payAtTornado: 110 },
@@ -393,6 +398,7 @@ const runTuning = {
     { id: 'gauge', price: 900, windGauge: true },
     { id: 'turret', price: 1000, viewfinderTimes: 2 },
     { id: 'phased', price: 1100, sweepTimes: 4, radarMarks: true },
+    { id: 'tires', price: 1200, offRoad: true },
   ],
   days: [0, 1, 2].map((strength) => ({
     path: [{ x: 20, y: 20 }, { x: 30, y: 20 }],
@@ -1317,4 +1323,66 @@ test('the storm knows which way it is travelling', () => {
   assert.ok(Math.abs(east.x - 1) < 1e-9 && Math.abs(east.y) < 1e-9);
   const north = stormAfter(15).heading;
   assert.ok(Math.abs(north.x) < 1e-9 && Math.abs(north.y - 1) < 1e-9);
+});
+
+// The off-road tires.
+
+test('without the off-road tires the car keeps to the roads', () => {
+  const plain = dayTuning(runTuning, 1);
+  assert.equal(plain.offRoad, false);
+  // East two miles, then up held where no road goes north: the car carries
+  // on east along its road.
+  let state = step(newGame(plain, roads), { x: 1, y: 0 }, 1, plain, roads);
+  state = step(state, { x: 0, y: 1 }, 1, plain, roads);
+  assert.equal(state.car.y, 0);
+});
+
+test('with the off-road tires an arrow moves the car that way, road or no road', () => {
+  const tires = dayTuning(runTuning, 1, ['tires']);
+  let state = step(newGame(tires, roads), { x: 1, y: 0 }, 1, tires, roads);
+  assert.deepEqual(state.car, { x: 2, y: 0 });
+  // North, off the road and across the fields.
+  state = step(state, { x: 0, y: 1 }, 1, tires, roads);
+  assert.deepEqual(state.car, { x: 2, y: 2 });
+  state = step(state, { x: -1, y: 0 }, 0.5, tires, roads);
+  assert.deepEqual(state.car, { x: 1, y: 2 });
+});
+
+test('with the off-road tires two arrows drive on the diagonal, no faster than one', () => {
+  const tires = dayTuning(runTuning, 1, ['tires']);
+  const { car } = step(newGame(tires, roads), { x: 1, y: -1 }, 1, tires, roads);
+  assert.ok(Math.abs(car.x - Math.SQRT2) < 1e-9 && Math.abs(car.y + Math.SQRT2) < 1e-9, `at ${car.x}, ${car.y}`);
+});
+
+test('with the off-road tires the car stays put with no arrow held', () => {
+  const tires = dayTuning(runTuning, 1, ['tires']);
+  const state = step(newGame(tires, roads), { x: 0, y: 1 }, 1, tires, roads);
+  assert.deepEqual(step(state, { x: 0, y: 0 }, 1, tires, roads).car, { x: 0, y: 2 });
+});
+
+test('with the off-road tires the car stops at the edge of the territory', () => {
+  // A very fast car, to get there before the day's storm is over.
+  const tires = { ...dayTuning(runTuning, 1, ['tires']), carMilesPerSecond: 30 };
+  let state = newGame(tires, roads);
+  // The territory is 60 miles wide and 40 tall. Far enough south-west to
+  // pass both edges.
+  for (let seconds = 0; seconds < 2; seconds++) state = step(state, { x: -1, y: -1 }, 1, tires, roads);
+  assert.deepEqual(state.car, { x: -30, y: -20 });
+  // And it can still drive along the edge and back in.
+  state = step(state, { x: 1, y: 0 }, 0.1, tires, roads);
+  assert.deepEqual(state.car, { x: -27, y: -20 });
+});
+
+test('the off-road tires are bought once and kept in the save', () => {
+  const bought = buy(inGarage(2000), 'tires', runTuning);
+  assert.deepEqual(bought.parts, ['tires']);
+  assert.equal(bought.balance, 800);
+  assert.equal(buy(bought, 'tires', runTuning), bought);
+  assert.deepEqual(readSave(JSON.stringify(saveOf(bought, runTuning)), runTuning)?.parts, ['tires']);
+});
+
+test('the garage sells off-road tires, and no other part costs more', () => {
+  const tires = tuningFile.parts.find((part) => part.offRoad);
+  assert.ok(tires);
+  for (const part of tuningFile.parts) assert.ok(part === tires || part.price < tires.price, `${part.name} costs as much`);
 });

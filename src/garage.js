@@ -12,9 +12,9 @@ const dollars = (amount) => `$${Math.round(amount).toLocaleString('en-US')}`;
 
 // Where the vehicle's picture goes on the screen, in pixels.
 const vehicle = { left: 90, top: 330, wide: 800, tall: 420 };
-// Where the list of parts goes, and how tall each part's row is. Eleven rows
+// Where the list of parts goes, and how tall each part's row is. Twelve rows
 // fit.
-const list = { left: 960, top: 150, wide: 880, rowTall: 76 };
+const list = { left: 960, top: 140, wide: 880, rowTall: 71 };
 
 /**
  * Paints the garage.
@@ -77,25 +77,25 @@ export function drawGarage(ctx, state, run, chosen) {
     ctx.textAlign = 'left';
     ctx.fillStyle = why === 'owned' ? '#9be28c' : '#dce6ee';
     ctx.font = 'bold 32px system-ui, sans-serif';
-    ctx.fillText(part.name, list.left + 16, top + 6, 560);
+    ctx.fillText(part.name, list.left + 16, top + 4, 560);
     ctx.fillStyle = '#a9b8c4';
     ctx.font = '22px system-ui, sans-serif';
-    ctx.fillText(part.does, list.left + 16, top + 44, 560);
+    ctx.fillText(part.does, list.left + 16, top + 38, 560);
 
     ctx.textAlign = 'right';
     ctx.fillStyle = why === 'owned' ? '#9be28c' : '#dce6ee';
     ctx.font = 'bold 32px system-ui, sans-serif';
-    ctx.fillText(why === 'owned' ? 'OWNED' : dollars(part.price), right, top + 6);
+    ctx.fillText(why === 'owned' ? 'OWNED' : dollars(part.price), right, top + 4);
     ctx.font = '22px system-ui, sans-serif';
     if (why === 'money') {
       ctx.fillStyle = '#ff4d4d';
-      ctx.fillText('Not enough money', right, top + 44);
+      ctx.fillText('Not enough money', right, top + 38);
     } else if (why === 'needs') {
       ctx.fillStyle = '#ff4d4d';
-      ctx.fillText(`Needs ${needed?.name ?? part.needs} first`, right, top + 44, 280);
+      ctx.fillText(`Needs ${needed?.name ?? part.needs} first`, right, top + 38, 280);
     } else if (why === '' && i === chosen) {
       ctx.fillStyle = '#ffd24a';
-      ctx.fillText('B: buy', right, top + 44);
+      ctx.fillText('B: buy', right, top + 38);
     }
   });
 
