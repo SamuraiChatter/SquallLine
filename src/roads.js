@@ -175,6 +175,54 @@ export function drive(network, spot, steering, miles) {
 }
 
 /**
+ * The next junction ahead of a moving car, and what the arrows held now will
+ * do there.
+ * @typedef {object} JunctionAhead
+ * @property {number} x How many miles east of the middle the junction is.
+ * @property {number} y How many miles north.
+ * @property {(Point & { lit: boolean })[]} ways Each road out of the
+ *   junction, apart from the one the car is on: its direction, one mile
+ *   long, and whether the car will take it. None is lit if the car would
+ *   stop there.
+ */
+
+/**
+ * Finds the next junction ahead of the car: the first point along its road
+ * where it could take another.
+ * @param {RoadNetwork} network
+ * @param {RoadSpot} spot
+ * @param {import('./rules.js').Steering} steering The arrows held now.
+ * @returns {JunctionAhead | null} Null for a car that is not moving, and
+ *   for one whose road ends before it meets another.
+ */
+export function junctionAhead(network, spot, steering) {
+  if (!spot.moving || spot.from === spot.to) return null;
+  // Follow the road on round its bends. The count is a backstop for a road
+  // that loops back on itself without ever meeting another.
+  let { from, to } = spot;
+  let miles = gap(network, from, to) - spot.miles;
+  for (let bends = 0; network.ways[to].length === 2 && bends < 10000; bends++) {
+    const next = network.ways[to][0] === from ? network.ways[to][1] : network.ways[to][0];
+    miles += gap(network, to, next);
+    from = to;
+    to = next;
+  }
+  if (network.ways[to].length < 3) return null;
+  // Drive the car a hair past the junction to see which road it takes. One
+  // that stops short, or turns round before it gets there, takes none.
+  const after = drive(network, spot, steering, miles + 1e-6);
+  const taken = after.moving && after.from === to ? after.to : -1;
+  const junction = to;
+  return {
+    x: network.xs[junction],
+    y: network.ys[junction],
+    ways: network.ways[junction]
+      .filter((point) => point !== from)
+      .map((point) => ({ ...toward(network, junction, point), lit: point === taken })),
+  };
+}
+
+/**
  * Picks which way the car goes next.
  * @param {(Point & { to: number })[]} ways Each way out of where the car is:
  *   the point it leads to, and its direction.

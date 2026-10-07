@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildNetwork, drive, nearestSpot, placeOf } from './roads.js';
+import { buildNetwork, drive, junctionAhead, nearestSpot, placeOf } from './roads.js';
 
 // A small map with easy numbers:
 //  - Main Street runs west to east through the middle, from 10 miles west to
@@ -123,4 +123,72 @@ test('a ramp joins an interstate to another road', () => {
   // along Main Street.
   const ramp = Math.hypot(0.5, 1);
   assertAt(driven({ x: -5.5, y: -10 }, [north, 11], [east, 3]), { x: -5 + 3 - ramp, y: 0 });
+});
+
+/**
+ * The car after starting stopped near a place and holding an arrow for so
+ * many miles.
+ * @param {{ x: number, y: number }} place
+ * @param {{ x: number, y: number }} steering
+ * @param {number} miles
+ */
+function moving(place, steering, miles) {
+  return drive(network, nearestSpot(network, place), steering, miles);
+}
+
+/**
+ * The directions of a junction's roads, as compass points, and which is lit.
+ * @param {import('./roads.js').JunctionAhead | null} junction
+ */
+function roadsOut(junction) {
+  /** @param {{ x: number, y: number }} way */
+  const name = (way) => (Math.abs(way.x) > Math.abs(way.y) ? (way.x > 0 ? 'east' : 'west') : way.y > 0 ? 'north' : 'south');
+  const ways = junction?.ways ?? [];
+  return { all: ways.map(name).sort(), lit: ways.filter((way) => way.lit).map(name) };
+}
+
+test('a stopped car has no junction ahead', () => {
+  assert.equal(junctionAhead(network, nearestSpot(network, { x: 0, y: -10 }), north), null);
+});
+
+test('the junction ahead shows every road out of it but the one the car is on', () => {
+  // North up Broadway toward the crossroads with Main Street.
+  const junction = junctionAhead(network, moving({ x: 0, y: -10 }, north, 2), north);
+  assert.deepEqual({ x: junction?.x, y: junction?.y }, { x: 0, y: 0 });
+  assert.deepEqual(roadsOut(junction).all, ['east', 'north', 'west']);
+});
+
+test('the road the car will take with the arrows held now is lit, and the car then takes it', () => {
+  const spot = moving({ x: 0, y: -10 }, north, 2);
+  assert.deepEqual(roadsOut(junctionAhead(network, spot, north)).lit, ['north']);
+  assert.deepEqual(roadsOut(junctionAhead(network, spot, east)).lit, ['east']);
+  assert.deepEqual(roadsOut(junctionAhead(network, spot, west)).lit, ['west']);
+  assertAt(placeOf(network, drive(network, spot, east, 10)), { x: 2, y: 0 });
+  assertAt(placeOf(network, drive(network, spot, west, 10)), { x: -2, y: 0 });
+});
+
+test('where the car would stop, no road is lit', () => {
+  // West along Main Street to West Road, which runs north and south.
+  const junction = junctionAhead(network, moving({ x: -5, y: 0 }, west, 1), west);
+  assert.deepEqual(roadsOut(junction), { all: ['north', 'south'], lit: [] });
+});
+
+test('the junction ahead is the next one, past any bends on the way', () => {
+  // North up the interstate: on past the point where Main Street goes
+  // under it, to the ramp.
+  const junction = junctionAhead(network, moving({ x: -5.5, y: -10 }, north, 2), north);
+  assert.deepEqual({ x: junction?.x, y: junction?.y }, { x: -5.5, y: 1 });
+  assert.equal(junction?.ways.length, 2);
+});
+
+test('a road that ends before it meets another has no junction ahead', () => {
+  assert.equal(junctionAhead(network, moving({ x: 0, y: 0 }, north, 2), north), null);
+});
+
+test('once through a junction, the junction ahead is the one after it', () => {
+  // East along Main Street from West Road, past the interstate's ramp.
+  const before = junctionAhead(network, moving({ x: -10, y: 0 }, east, 2), east);
+  assert.deepEqual({ x: before?.x, y: before?.y }, { x: -5, y: 0 });
+  const after = junctionAhead(network, moving({ x: -10, y: 0 }, east, 7), east);
+  assert.deepEqual({ x: after?.x, y: after?.y }, { x: 0, y: 0 });
 });
