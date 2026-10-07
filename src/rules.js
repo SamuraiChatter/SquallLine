@@ -36,7 +36,8 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @typedef {object} GameState
  * @property {Point} car
  * @property {import('./roads.js').RoadSpot} road Where the car is on the
- *   roads. The car never leaves them.
+ *   roads. Without off-road tires the car never leaves them; with them, this
+ *   is only where the day started.
  * @property {Storm} storm
  * @property {boolean} filming True while the car is pulled over to film.
  * @property {number} camera Which way the camera points, in degrees round
@@ -129,12 +130,13 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {boolean} [windGauge]
  * @property {number} [sweepTimes]
  * @property {boolean} [radarMarks]
+ * @property {boolean} [offRoad]
  */
 
 /**
  * The numbers a whole run plays by: what the days share, each day's own, and
  * the parts the garage sells.
- * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail' | 'anchor' | 'wind' | 'spotters'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, radar: Pick<TuningFile['radar'], 'sweepSeconds' | 'vortexHook'>, days: Day[], parts: Part[] }} RunTuning
+ * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'territoryMilesWide' | 'territoryMilesTall' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail' | 'anchor' | 'wind' | 'spotters'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, radar: Pick<TuningFile['radar'], 'sweepSeconds' | 'vortexHook'>, days: Day[], parts: Part[] }} RunTuning
  */
 
 /**
@@ -153,6 +155,8 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {RunTuning['wind'] & { gauge?: boolean }} wind With the roof
  *   wind gauge, gauge is true.
  * @property {boolean} [dashRadar] True with the dash radar.
+ * @property {boolean} [offRoad] True with the off-road tires: the car goes
+ *   where the arrows point, road or no road.
  * @property {RunTuning['radar'] & { marks?: boolean }} radar With the phased
  *   array radar, marks is true: the radar marks rotation and tornadoes.
  *
@@ -182,6 +186,7 @@ export function dayTuning(tuning, day, owned = []) {
     carMilesPerSecond: tuning.carMilesPerSecond * times('speedTimes'),
     camera: { ...tuning.camera, viewfinderDegrees: tuning.camera.viewfinderDegrees * times('viewfinderTimes') },
     dashRadar: parts.some((part) => part.dashRadar),
+    offRoad: parts.some((part) => part.offRoad),
     radar: { ...tuning.radar, sweepSeconds: tuning.radar.sweepSeconds / times('sweepTimes'), marks: parts.some((part) => part.radarMarks) },
     wind: { ...tuning.wind, gauge: parts.some((part) => part.windGauge) },
     storm: { ...tuning.storm, path, tornadoes, falseAlarms },
@@ -826,6 +831,24 @@ function driveOrFilm(state, steering, dt, tuning, roads) {
     const filmed = direct || tornadoInFrame(next, tuning) ? dt : 0;
     const pay = direct ? tuning.footage.payAtTornado : payPerSecond(milesToFunnel(next), tuning);
     return { ...next, footage: state.footage + filmed, money: state.money + filmed * pay };
+  }
+
+  if (tuning.offRoad) {
+    // Off-road tires: the car goes the way the arrows point, at its normal
+    // speed, whether or not a road goes there. It stops at the edge of the
+    // territory.
+    const size = Math.hypot(steering.x, steering.y);
+    if (!size) return state;
+    const miles = (tuning.carMilesPerSecond * dt) / size;
+    const halfWide = tuning.territoryMilesWide / 2;
+    const halfTall = tuning.territoryMilesTall / 2;
+    return {
+      ...state,
+      car: {
+        x: Math.max(-halfWide, Math.min(halfWide, state.car.x + steering.x * miles)),
+        y: Math.max(-halfTall, Math.min(halfTall, state.car.y + steering.y * miles)),
+      },
+    };
   }
 
   const road = drive(roads, state.road, steering, tuning.carMilesPerSecond * dt);
