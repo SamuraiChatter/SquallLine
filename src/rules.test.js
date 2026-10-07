@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildNetwork } from './roads.js';
-import { anchorWait, windMph, beginChase, buy, dangerRingMiles, dayTuning, freePlay, insideTornado, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, radarMarks, readSave, resume, runFinished, saveOf, spotterReport, spotterSees, spotters, step, strongest, toggleAnchor, toggleFilming, tornadoInFrame, whyNotBuy, windDamagePerSecond } from './rules.js';
+import { anchorWait, windMph, beginChase, buy, dangerRingMiles, dayTuning, freePlay, insideTornado, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, radarMarks, readSave, resume, runFinished, saveOf, spotterReport, spotterSees, spotters, step, strongest, toggleAnchor, toggleFilming, toggleRadarView, tornadoInFrame, whyNotBuy, windDamagePerSecond } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
@@ -1278,4 +1278,43 @@ test('the phased array radar is bought once and kept in the save', () => {
   assert.equal(bought.balance, 900);
   assert.equal(buy(bought, 'phased', runTuning), bought);
   assert.deepEqual(readSave(JSON.stringify(saveOf(bought, runTuning)), runTuning)?.parts, ['phased']);
+});
+
+// The radar's velocity view.
+
+test('the radar starts on reflectivity, and V switches to velocity and back', () => {
+  const state = newGame(stormTuning, roads);
+  assert.equal(state.velocityView, false);
+  assert.equal(toggleRadarView(state).velocityView, true);
+  assert.equal(toggleRadarView(toggleRadarView(state)).velocityView, false);
+});
+
+test('the view can be switched while filming, and stays as it is while the game runs', () => {
+  let state = toggleRadarView(toggleFilming(newGame(stormTuning, roads)));
+  assert.equal(state.velocityView, true);
+  for (let i = 0; i < 8; i++) state = step(state, still, 0.25, stormTuning, roads);
+  assert.equal(state.velocityView, true);
+});
+
+test('the view cannot be switched during the briefing or once the day is over', () => {
+  const briefing = newRun(runTuning, roads);
+  assert.equal(toggleRadarView(briefing), briefing);
+  const over = headHome(newGame(stormTuning, roads), stormTuning);
+  assert.equal(toggleRadarView(over), over);
+});
+
+test('a new day starts on reflectivity, whatever the last day ended on', () => {
+  let state = sitOut(toggleRadarView(beginChase(newRun(runTuning, roads))));
+  assert.equal(state.velocityView, true);
+  state = nextDay(nextDay(state, runTuning, roads), runTuning, roads);
+  assert.equal(state.day, 2);
+  assert.equal(state.velocityView, false);
+});
+
+test('the storm knows which way it is travelling', () => {
+  // East along the first leg of its path, then north along the second.
+  const east = stormAfter(5).heading;
+  assert.ok(Math.abs(east.x - 1) < 1e-9 && Math.abs(east.y) < 1e-9);
+  const north = stormAfter(15).heading;
+  assert.ok(Math.abs(north.x) < 1e-9 && Math.abs(north.y - 1) < 1e-9);
 });

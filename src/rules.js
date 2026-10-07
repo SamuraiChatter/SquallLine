@@ -15,6 +15,8 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {number} miles How far along its path the storm has travelled.
  * @property {number} x
  * @property {number} y
+ * @property {Point} heading Which way the storm is travelling: one mile's
+ *   worth of east (x) and north (y).
  * @property {number} hook How far the hook has grown and tightened: 0 is no
  *   hook, 1 is a full hook with a tornado due or on the ground.
  * @property {number} tornadoHook How much of that hook belongs to a real
@@ -79,6 +81,8 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  *   on the map, oldest first.
  * @property {number} reportWait How many seconds until the spotters call in
  *   again. Nothing while there is nothing for them to see.
+ * @property {boolean} velocityView True while the radar shows the wind, false
+ *   while it shows the rain. Every day starts on the rain.
  */
 
 /**
@@ -413,6 +417,7 @@ export function newGame(tuning, roads) {
     beam: 0,
     reports: [],
     reportWait: 0,
+    velocityView: false,
   };
 }
 
@@ -485,6 +490,17 @@ export function milesToFunnel(state) {
 export function toggleFilming(state) {
   if (state.anchoring || state.anchor > 0) return state;
   return { ...state, filming: !state.filming, camera: bearingToFunnel(state), road: { ...state.road, moving: false } };
+}
+
+/**
+ * Switches the radar between its two pictures: reflectivity, which shows the
+ * rain, and velocity, which shows the wind. Only during the chase.
+ * @param {GameState} state
+ * @returns {GameState}
+ */
+export function toggleRadarView(state) {
+  if (state.briefing || state.dayOver) return state;
+  return { ...state, velocityView: !state.velocityView };
 }
 
 /**
@@ -846,6 +862,8 @@ function stormAt(miles, tuning) {
   const share = legs[i] ? left / legs[i] : 0;
   const x = path[i].x + (path[i + 1].x - path[i].x) * share;
   const y = path[i].y + (path[i + 1].y - path[i].y) * share;
+  // Which way this leg of the path runs. A leg of no length runs nowhere.
+  const heading = legs[i] ? { x: (path[i + 1].x - path[i].x) / legs[i], y: (path[i + 1].y - path[i].y) / legs[i] } : { x: 0, y: 0 };
 
   // Where the storm is as a share of the whole path: 0 at the start, 1 at
   // the end. The tornadoes are set out in these shares.
@@ -878,5 +896,5 @@ function stormAt(miles, tuning) {
   const fading = falseAlarms.some(({ end }) => along < Math.min(1, end + tuning.hookLead));
   const spent = last !== undefined && along >= last.end && !fading;
   const strength = (onGround ?? next)?.strength ?? 0;
-  return { miles, x, y, hook, tornadoHook, tornado, funnel: funnelOf({ x, y }), strength, spent };
+  return { miles, x, y, heading, hook, tornadoHook, tornado, funnel: funnelOf({ x, y }), strength, spent };
 }

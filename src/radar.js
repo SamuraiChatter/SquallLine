@@ -234,3 +234,122 @@ export function beamPassed(bearing, beam, turned) {
   const past = (((beam - bearing) % 1) + 1) % 1;
   return past < turned;
 }
+
+// The velocity view.
+
+// How fast the storm's own travel carries the air, in miles an hour.
+const flowMph = 20;
+// The couplet: the tight pair of winds either side of the storm's rotation.
+// How far its fastest wind is from its middle, in miles, and how fast that
+// wind is, in miles an hour: for a hook just starting, and for a full one.
+const coupletMiles = { faint: 2, full: 0.5 };
+const coupletMph = { faint: 0, full: 60 };
+
+/**
+ * The couplet of a storm: where its middle is, how far out its fastest wind
+ * is, and how fast that wind is. With no hook there is none, and its speed is
+ * nothing. It starts wide and slow at the middle of the storm's rotation, and
+ * tightens, quickens and moves to the funnel as the hook grows. A false
+ * alarm's is the same as a real hook's.
+ * @param {Storm} storm
+ * @returns {{ x: number, y: number, miles: number, mph: number }}
+ */
+export function coupletOf(storm) {
+  const hook = Math.max(0, Math.min(1, storm.hook));
+  const from = rotationOf(storm);
+  return {
+    x: from.x + (storm.funnel.x - from.x) * hook,
+    y: from.y + (storm.funnel.y - from.y) * hook,
+    miles: coupletMiles.faint + (coupletMiles.full - coupletMiles.faint) * hook,
+    mph: coupletMph.faint + (coupletMph.full - coupletMph.faint) * hook,
+  };
+}
+
+// How far out from a couplet's middle the radar can read the wind even where
+// too little rain is falling to show, as so many times the couplet's size.
+const coupletReach = 1.6;
+
+/**
+ * Whether a place is close in round a storm's couplet. The rotation sits in
+ * the hook's curl, where hardly any rain falls, but a radar reads wind from
+ * echoes too faint to show as rain. So the velocity view shows the wind here
+ * whether or not the reflectivity view shows rain.
+ * @param {Point} point
+ * @param {Storm} storm
+ */
+export function inCouplet(point, storm) {
+  const couplet = coupletOf(storm);
+  return couplet.mph > 0 && Math.hypot(point.x - couplet.x, point.y - couplet.y) <= couplet.miles * coupletReach;
+}
+
+/**
+ * How much of the map a wind this fast hides in the velocity view, in
+ * percent, where no rain shows: faster wind is brighter.
+ * @param {number} mph
+ * @param {number} light What the slowest wind hides.
+ * @param {number} heavy What the fastest hides.
+ */
+export function windCoverOf(mph, light, heavy) {
+  return light + (heavy - light) * Math.min(1, Math.abs(mph) / coupletMph.full);
+}
+
+/**
+ * How fast the wind blows along the radar's beam at a place, in miles an
+ * hour. More than nothing is away from the radar, less is toward it. A radar
+ * cannot see wind that blows across its beam.
+ * @param {Point} point
+ * @param {Storm} storm
+ * @param {Point} site Where the radar stands.
+ * @param {number} [seed] A whole number that changes the gusts.
+ * @returns {number}
+ */
+export function velocityAt(point, storm, site, seed = 0) {
+  const x = point.x - storm.x;
+  const y = point.y - storm.y;
+  if (x < -rainReach.back || x > rainReach.front || y < -rainReach.back || y > rainReach.front) return 0;
+
+  // The broad flow: the air travels with the storm, with small gusts.
+  let east = storm.heading.x * flowMph;
+  let north = storm.heading.y * flowMph;
+
+  // The rotation: anticlockwise round the couplet's middle, fastest at the
+  // couplet's edge and dying away either side of it.
+  const couplet = coupletOf(storm);
+  const dx = point.x - couplet.x;
+  const dy = point.y - couplet.y;
+  const out = Math.hypot(dx, dy);
+  if (couplet.mph > 0 && out > 0) {
+    const speed = couplet.mph * (out < couplet.miles ? out / couplet.miles : couplet.miles / out);
+    east += (-dy / out) * speed;
+    north += (dx / out) * speed;
+  }
+
+  // The part of the wind that blows along the line from the radar.
+  const far = Math.hypot(point.x - site.x, point.y - site.y) || 1;
+  const along = (east * (point.x - site.x) + north * (point.y - site.y)) / far;
+  return along + 4 * noise(x * 0.8 + 20, y * 0.8, seed + 7);
+}
+
+// The colours of the velocity view, slowest first: the wind speed each
+// starts at in miles an hour, then red, green and blue for wind blowing away
+// from the radar. Wind blowing toward it swaps the red and the green.
+const velocityScale = [
+  [5, 0x7a, 0x1f, 0x1f],
+  [15, 0xb0, 0x26, 0x26],
+  [30, 0xe0, 0x30, 0x30],
+  [45, 0xff, 0x6a, 0x55],
+];
+// Nearly still: a dull grey-green.
+const stillColour = [0x5f, 0x70, 0x62];
+
+/**
+ * The colour the velocity view gives a wind along the beam.
+ * @param {number} mph More than nothing is away from the radar.
+ * @returns {number[]} Red, green and blue.
+ */
+export function velocityColourOf(mph) {
+  const step = velocityScale.findLast(([from]) => Math.abs(mph) >= from);
+  if (!step) return stillColour;
+  const [, strong, weak, blue] = step;
+  return mph > 0 ? [strong, weak, blue] : [weak, strong, blue];
+}
