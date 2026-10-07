@@ -6,7 +6,8 @@
 
 import { tuning } from '../tuning.js';
 import { drawDashRadar } from './draw.js';
-import { anchorWait, cameraOffFunnel, inDebrisZone, inHailCore, insideTornado, milesToFunnel, payPerSecond, tornadoInFrame } from './rules.js';
+import { anchorWait, cameraOffFunnel, inDebrisZone, inHailCore, insideTornado, milesToFunnel, payPerSecond, tornadoInFrame, windMph } from './rules.js';
+import { skyDarkness, treeLean } from './scene.js';
 
 /**
  * Writes a placeholder's file name on it.
@@ -32,6 +33,165 @@ const shapes = [
   { fileName: 'art/tornado-wedge.png', top: 0.55, foot: 0.3 },
 ];
 
+// How far down the windshield the storm's cloud base hangs, as a share of
+// the windshield's height.
+const cloudBase = 0.2;
+// How fast the clouds drift across the sky, in degrees round the compass
+// each second. The nearer layer goes faster.
+const cloudDrift = [0.8, 1.6];
+
+/**
+ * How far right of the middle of the view a compass bearing is, in degrees
+ * from -180 to 180.
+ * @param {import('./rules.js').GameState} state
+ * @param {number} bearing In degrees round from north.
+ */
+function offCamera(state, bearing) {
+  return ((((bearing - state.camera) % 360) + 540) % 360) - 180;
+}
+
+/**
+ * How far across the screen, in pixels, something so many degrees right of
+ * the middle of the view is.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} degrees
+ */
+function acrossOf(ctx, degrees) {
+  return ctx.canvas.width * (0.5 + degrees / tuning.camera.viewDegrees);
+}
+
+/**
+ * Paints the storm sky, the cloud base and the fields. They are fixed to the
+ * compass, so they slide across as the camera pans.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {import('./rules.js').GameState} state
+ * @param {number} seconds The clock.
+ * @param {number} horizon How far down the screen the horizon is, in pixels.
+ */
+function drawSkyAndGround(ctx, state, seconds, horizon) {
+  const { width, height } = ctx.canvas;
+  const { viewDegrees } = tuning.camera;
+
+  // A storm sky: slate overhead, with a pale, sickly light along the horizon.
+  const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+  sky.addColorStop(0, '#36424d');
+  sky.addColorStop(1, '#8b9a8c');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, width, horizon);
+  // It darkens toward the tornado: a shade across the sky, deepest in the
+  // tornado's direction. Not so deep that the tornado is lost in it.
+  const offFunnel = cameraOffFunnel(state);
+  const shade = ctx.createLinearGradient(0, 0, width, 0);
+  const stops = 16;
+  for (let stop = 0; stop <= stops; stop++) {
+    const degrees = (stop / stops - 0.5) * viewDegrees;
+    shade.addColorStop(stop / stops, `rgba(9, 12, 16, ${0.62 * skyDarkness(degrees - offFunnel)})`);
+  }
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, 0, width, horizon);
+
+  // The cloud base: two layers of low, dark cloud with a lumpy underside,
+  // the nearer one darker, lower and faster.
+  cloudDrift.forEach((drift, layer) => {
+    const base = height * cloudBase * (0.8 + 0.2 * layer);
+    ctx.fillStyle = layer ? '#12161b' : '#222a32';
+    ctx.fillRect(0, 0, width, base * 0.75);
+    ctx.beginPath();
+    // A lump every eight degrees round the compass, each its own size.
+    for (let lump = 0; lump < 45; lump++) {
+      const degrees = offCamera(state, lump * 8 + layer * 4 + seconds * drift);
+      if (Math.abs(degrees) > viewDegrees / 2 + 12) continue;
+      const wide = width * (0.075 + ((lump * 7 + layer * 3) % 5) * 0.012);
+      const deep = base * (0.3 + ((lump * 3 + layer) % 4) * 0.07);
+      const x = acrossOf(ctx, degrees);
+      ctx.moveTo(x + wide, base * 0.75);
+      ctx.ellipse(x, base * 0.75, wide, deep, 0, 0, Math.PI * 2);
+    }
+    ctx.fill();
+  });
+
+  // The ground: fields, darker toward the car.
+  const ground = ctx.createLinearGradient(0, horizon, 0, height);
+  ground.addColorStop(0, '#4b5a39');
+  ground.addColorStop(1, '#232d1c');
+  ctx.fillStyle = ground;
+  ctx.fillRect(0, horizon, width, height - horizon);
+  // Strips of field across the view, deeper the nearer they are: every other
+  // one a paler crop.
+  const fields = 7;
+  ctx.fillStyle = 'rgba(150, 140, 80, 0.16)';
+  for (let field = 1; field < fields; field += 2) {
+    const top = horizon + (height - horizon) * (field / fields) ** 2;
+    const bottom = horizon + (height - horizon) * ((field + 1) / fields) ** 2;
+    ctx.fillRect(0, top, width, bottom - top);
+  }
+  // The hedges between fields run away from the car to the horizon, one
+  // every ten degrees round the compass.
+  ctx.beginPath();
+  for (let hedge = 0; hedge < 36; hedge++) {
+    const degrees = offCamera(state, hedge * 10 + 5);
+    if (Math.abs(degrees) > viewDegrees / 2 + 5) continue;
+    const x = acrossOf(ctx, degrees);
+    ctx.moveTo(x, horizon);
+    ctx.lineTo(width / 2 + (x - width / 2) * 3.4, height);
+  }
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(22, 30, 18, 0.55)';
+  ctx.stroke();
+  // A clear horizon.
+  ctx.fillStyle = '#1a2217';
+  ctx.fillRect(0, horizon - 2, width, 5);
+}
+
+/**
+ * Paints the line of trees and poles along the horizon. The trees lean
+ * toward the tornado and thrash harder as the wind at the car rises: the
+ * same wind the roof gauge reads.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {import('./rules.js').GameState} state
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
+ * @param {number} seconds The clock.
+ * @param {number} horizon How far down the screen the horizon is, in pixels.
+ */
+function drawTreeLine(ctx, state, day, seconds, horizon) {
+  const { viewDegrees } = tuning.camera;
+  const { storm } = state;
+  const mph = storm.tornado > 0 ? windMph(milesToFunnel(state), storm.strength, day) : 0;
+  const offFunnel = cameraOffFunnel(state);
+  ctx.lineCap = 'round';
+  // Something stands every three degrees round the compass: mostly trees,
+  // each its own height, and every fifth one a pole.
+  for (let n = 0; n < 120; n++) {
+    const degrees = offCamera(state, n * 3);
+    if (Math.abs(degrees) > viewDegrees / 2 + 4) continue;
+    const x = acrossOf(ctx, degrees);
+    if (n % 5 === 2) {
+      ctx.fillStyle = '#161a16';
+      ctx.fillRect(x - 3, horizon - 84, 6, 84);
+      ctx.fillRect(x - 22, horizon - 76, 44, 5);
+      continue;
+    }
+    const tall = 48 + ((n * 37) % 5) * 13;
+    // A tree to the left of the tornado leans right, toward it. One in line
+    // with the tornado, or straight across from it, leans neither way, so
+    // no tree snaps from one side to the other as the camera pans.
+    const round = ((offFunnel - degrees) * Math.PI) / 180;
+    const lean = treeLean(mph, Math.max(-1, Math.min(1, Math.sin(round) * 3)), seconds, n);
+    const reach = { x: Math.sin(lean), y: -Math.cos(lean) };
+    ctx.beginPath();
+    ctx.moveTo(x, horizon);
+    ctx.lineTo(x + reach.x * tall * 0.6, horizon + reach.y * tall * 0.6);
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#161a13';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(x + reach.x * tall * 0.68, horizon + reach.y * tall * 0.68, tall * 0.3, tall * 0.42, lean, 0, Math.PI * 2);
+    ctx.fillStyle = '#1c2819';
+    ctx.fill();
+  }
+  ctx.lineCap = 'butt';
+}
+
 /**
  * Paints the windshield view.
  * @param {CanvasRenderingContext2D} ctx
@@ -43,21 +203,15 @@ export function drawWindshield(ctx, state, day) {
   const horizon = height * 0.62;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  // art/sky.png
-  ctx.fillStyle = '#3d4a57';
-  ctx.fillRect(0, 0, width, horizon);
-  label(ctx, 'art/sky.png', width * 0.05, height * 0.13);
-
-  // art/ground.png
-  ctx.fillStyle = '#2f3b2a';
-  ctx.fillRect(0, horizon, width, height - horizon);
-  label(ctx, 'art/ground.png', width * 0.05, horizon + 12);
+  // Everything that moves by itself keeps time by the clock.
+  const seconds = performance.now() / 1000;
+  drawSkyAndGround(ctx, state, seconds, horizon);
 
   // The tornado. How far left or right it sits follows its direction from
   // the car, its size follows how near it is, and its shape its strength.
   const { storm } = state;
   if (storm.tornado > 0) {
-    const x = width / 2 + (cameraOffFunnel(state) / tuning.camera.viewDegrees) * width;
+    const x = acrossOf(ctx, cameraOffFunnel(state));
     const miles = milesToFunnel(state);
     // Twice as near looks twice as tall, up to filling the sky.
     const tall = Math.min(horizon * 1.1, (horizon * 1.6) / Math.max(miles, 0.5)) * (0.4 + 0.6 * storm.tornado);
@@ -74,9 +228,11 @@ export function drawWindshield(ctx, state, day) {
     label(ctx, shape.fileName, x + tall * (shape.top + 0.02), top);
   }
 
+  // The trees and poles along the horizon stand in front of the tornado.
+  drawTreeLine(ctx, state, day, seconds, horizon);
+
   // The weather between the car and the tornado. Each bit of debris or hail
   // keeps its own track, worked out from its number and the clock.
-  const seconds = performance.now() / 1000;
 
   // art/inside-tornado.png: the direct hit. The tornado is all around, so
   // its wall fills the view and whirls past.
