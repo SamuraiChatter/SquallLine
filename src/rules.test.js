@@ -15,6 +15,7 @@ const tuning = {
   hail: { coreMilesLong: 2, coreMilesWide: 1, damagePerSecond: 0.2 },
   anchor: { downSeconds: 2, upSeconds: 1 },
   wind: { mphAtTornado: [100, 120, 140, 160, 180, 200], reachMiles: 10, bonusPerMph: 2 },
+  radar: { sweepSeconds: 4 },
 };
 
 // Two roads that cross in the middle of the territory: one from 30 miles west
@@ -943,4 +944,42 @@ test('in free play the science bonus is shown but the score stays the same', () 
   const ended = headHome(state, day);
   assert.equal(ended.scienceBonus, 100);
   assert.equal(ended.balance, 1050);
+});
+
+// The radar's beam.
+
+test('the radar beam starts pointing north and turns once in its turn time', () => {
+  let state = newGame(stormTuning, roads);
+  assert.equal(state.beam, 0);
+  for (let i = 0; i < 4; i++) state = step(state, still, 0.25, stormTuning, roads);
+  assert.ok(Math.abs(state.beam - 1 / stormTuning.radar.sweepSeconds) < 1e-9);
+  for (let i = 0; i < 12; i++) state = step(state, still, 0.25, stormTuning, roads);
+  assert.ok(Math.abs(state.beam - 1) < 1e-9);
+});
+
+test('a beam with half the turn time turns twice as fast', () => {
+  const fast = { ...stormTuning, radar: { sweepSeconds: stormTuning.radar.sweepSeconds / 2 } };
+  const slow = step(newGame(stormTuning, roads), still, 0.25, stormTuning, roads);
+  const quick = step(newGame(fast, roads), still, 0.25, fast, roads);
+  assert.ok(Math.abs(quick.beam - 2 * slow.beam) < 1e-9);
+});
+
+test('the beam keeps turning while the player films', () => {
+  const filming = toggleFilming(newGame(stormTuning, roads));
+  assert.ok(step(filming, still, 0.25, stormTuning, roads).beam > 0);
+});
+
+test('the beam stands still during the briefing and once the day is over', () => {
+  const briefing = newRun(runTuning, roads);
+  assert.equal(step(briefing, still, 1, dayTuning(runTuning, 1), roads).beam, 0);
+  const over = headHome(step(newGame(stormTuning, roads), still, 1, stormTuning, roads), stormTuning);
+  assert.equal(step(over, still, 1, stormTuning, roads).beam, over.beam);
+});
+
+test('each day starts with the beam pointing north again', () => {
+  let state = sitOut(beginChase(newRun(runTuning, roads)));
+  assert.ok(state.beam > 0);
+  state = nextDay(nextDay(state, runTuning, roads), runTuning, roads);
+  assert.equal(state.day, 2);
+  assert.equal(state.beam, 0);
 });

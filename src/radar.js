@@ -94,7 +94,7 @@ const body = [
 
 // How far the rain reaches from the storm's middle, in miles: south and
 // west, and north and east. Beyond this it is dry.
-export const rainReach = { back: 8, front: 13 };
+const rainReach = { back: 8, front: 13 };
 
 /**
  * How hard it is raining at a place, in dBZ.
@@ -201,4 +201,27 @@ export function colourOf(dbz) {
  */
 export function coverOf(dbz, light, heavy) {
   return light + (heavy - light) * Math.max(0, Math.min(1, (dbz - faintestDbz) / (hailDbz - faintestDbz)));
+}
+
+/**
+ * Which way a place is from the radar, in turns clockwise from north: 0 is
+ * north, 0.25 is east.
+ * @param {Point} point
+ * @param {Point} site Where the radar stands.
+ */
+export function bearingOf(point, site) {
+  return (Math.atan2(point.x - site.x, point.y - site.y) / (Math.PI * 2) + 1) % 1;
+}
+
+/**
+ * Whether the radar's beam has just passed over a bearing.
+ * @param {number} bearing In turns clockwise from north, from 0 to 1.
+ * @param {number} beam How far the beam has turned in all, in turns.
+ * @param {number} turned How much of that it turned just now.
+ */
+export function beamPassed(bearing, beam, turned) {
+  if (turned >= 1) return true;
+  // How far the beam has gone on past the bearing.
+  const past = (((beam - bearing) % 1) + 1) % 1;
+  return past < turned;
 }

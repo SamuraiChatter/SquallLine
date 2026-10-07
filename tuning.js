@@ -46,6 +46,16 @@ export const tuning = {
     // hides the roads completely.
     lightRainCovers: 35,
     heavyRainCovers: 75,
+
+    // Where the radar stands, as so many miles east (x) and north (y) of the
+    // middle of the territory. This is where the real Oklahoma City radar,
+    // KTLX, is. Its beam turns round this spot.
+    site: { x: 12.6, y: 5.7 },
+
+    // How many seconds the beam takes to turn once. The radar picture only
+    // changes where the beam passes over it, so a slower beam shows an older
+    // storm. The hail, the wind and the tornado marker are never late.
+    sweepSeconds: 5,
   },
 
   // How many miles the territory is from west to east, and from south to

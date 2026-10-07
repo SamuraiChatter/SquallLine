@@ -2,7 +2,7 @@
 // once per frame.
 
 import { tuning } from '../tuning.js';
-import { draw, paintRadar } from './draw.js';
+import { draw, sweepRadar } from './draw.js';
 import { drawGarage } from './garage.js';
 import { loadMap } from './map.js';
 import { drawAbout, drawBriefing, drawDamage, drawDayChoice, drawFinalScore, drawMoney, drawNewGameCheck, drawPause, drawSummary, drawTitle, drawTrialNote } from './hud.js';
@@ -236,7 +236,7 @@ function frame(now) {
     strikesSeen = state.debrisStrikes;
     struckAt = now;
   }
-  paintRadar(state.storm, game);
+  sweepRadar(state, game);
   // The briefing sits over the whole territory, with the storm coming in.
   if (state.filming) drawWindshield(ctx, state, game);
   else draw(ctx, state, wholeTerritory || state.briefing, map, game);

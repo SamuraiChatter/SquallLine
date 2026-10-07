@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { colourOf, coverOf, dbzAt, hailDbz, hookSpot } from './radar.js';
+import { beamPassed, bearingOf, colourOf, coverOf, dbzAt, hailDbz, hookSpot } from './radar.js';
 import { funnelOf, inHailCore } from './rules.js';
 
 const day = /** @type {import('./rules.js').Tuning} */ (/** @type {unknown} */ ({ hail: { coreMilesLong: 1.5, coreMilesWide: 1 } }));
@@ -85,4 +85,39 @@ test('light rain covers little of the map and heavy rain most of it', () => {
   assert.equal(coverOf(65, 35, 75), 75);
   assert.equal(coverOf(70, 35, 75), 75);
   assert.ok(coverOf(40, 35, 75) > 35 && coverOf(40, 35, 75) < 75);
+});
+
+// The sweeping beam. Bearings and the beam are in turns clockwise from north.
+
+test('a bearing is how far round from north a spot is, as seen from the radar', () => {
+  const site = { x: 10, y: 5 };
+  assert.equal(bearingOf({ x: 10, y: 9 }, site), 0);
+  assert.equal(bearingOf({ x: 13, y: 5 }, site), 0.25);
+  assert.equal(bearingOf({ x: 10, y: 0 }, site), 0.5);
+  assert.equal(bearingOf({ x: 2, y: 5 }, site), 0.75);
+});
+
+test('the beam has passed the bearings it turned through, and no others', () => {
+  // A tenth of a turn, ending a quarter of the way round.
+  assert.equal(beamPassed(0.2, 0.25, 0.1), true);
+  assert.equal(beamPassed(0.25, 0.25, 0.1), true);
+  assert.equal(beamPassed(0.14, 0.25, 0.1), false);
+  assert.equal(beamPassed(0.26, 0.25, 0.1), false);
+});
+
+test('the beam passes bearings either side of north as it comes round', () => {
+  // A tenth of a turn, ending just past north on its fourth time round.
+  assert.equal(beamPassed(0.97, 3.03, 0.1), true);
+  assert.equal(beamPassed(0.01, 3.03, 0.1), true);
+  assert.equal(beamPassed(0.05, 3.03, 0.1), false);
+  assert.equal(beamPassed(0.9, 3.03, 0.1), false);
+});
+
+test('a beam that has turned all the way round has passed everything', () => {
+  assert.equal(beamPassed(0.6, 0.25, 1), true);
+  assert.equal(beamPassed(0.26, 0.25, 1.5), true);
+});
+
+test('a beam that has not turned has passed nothing', () => {
+  assert.equal(beamPassed(0.25, 0.25, 0), false);
 });
