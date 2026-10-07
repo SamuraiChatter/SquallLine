@@ -6,8 +6,9 @@
 
 import { tuning } from '../tuning.js';
 import { drawDashRadar } from './draw.js';
-import { anchorWait, cameraOffFunnel, inDebrisZone, inHailCore, insideTornado, milesToFunnel, payPerSecond, tornadoInFrame, windMph } from './rules.js';
-import { funnelHalfWidth, funnelReach, skyDarkness, tornadoShape, treeLean } from './scene.js';
+import { dbzAt } from './radar.js';
+import { anchorWait, cameraOffFunnel, inDebrisZone, insideTornado, milesToFunnel, payPerSecond, tornadoInFrame, windMph } from './rules.js';
+import { funnelHalfWidth, funnelReach, hailAmount, rainAmount, rainSlant, skyDarkness, tornadoShape, treeLean } from './scene.js';
 
 /**
  * Writes a placeholder's file name on it.
@@ -310,6 +311,56 @@ function drawTornado(ctx, state, seconds, horizon) {
 }
 
 /**
+ * Paints the rain: as hard as the radar shows it at the car, from nothing
+ * outside the storm, through thin streaks, to a sheet. It slants toward the
+ * tornado, more as the wind at the car rises.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {import('./rules.js').GameState} state
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
+ * @param {number} seconds The clock.
+ */
+function drawRain(ctx, state, day, seconds) {
+  const { width, height } = ctx.canvas;
+  const { storm } = state;
+  // The same rain the radar picture is painted from, ragged edges and all.
+  const amount = rainAmount(dbzAt(state.car, storm, day, tuning.radar.hookDbz, Math.floor(state.beam)));
+  if (!amount) return;
+
+  // Heavy rain greys out the view. It stops short of hiding the tornado.
+  ctx.fillStyle = `rgba(150, 165, 176, ${0.45 * amount ** 1.6})`;
+  ctx.fillRect(0, 0, width, height);
+
+  const mph = storm.tornado > 0 ? windMph(milesToFunnel(state), storm.strength, day) : 0;
+  // Which way the streaks lean as they fall: toward the tornado's side.
+  const slant = rainSlant(mph) * (cameraOffFunnel(state) < 0 ? -1 : 1);
+  const lean = { x: Math.sin(slant), y: Math.cos(slant) };
+  const streaks = Math.round(40 + 660 * amount);
+  // How far sideways a streak travels on its way down the view.
+  const drift = (height * 1.1 * lean.x) / lean.y;
+  /**
+   * A steady number from 0 to 1 for each streak, different for each use, so
+   * that where a streak is and when it falls have nothing to do with each
+   * other.
+   * @param {number} streak
+   * @param {number} use
+   */
+  const scatter = (streak, use) => Math.abs((Math.sin(streak * 12.9898 + use * 78.233) * 43758.5453) % 1);
+  ctx.beginPath();
+  for (let streak = 0; streak < streaks; streak++) {
+    const fall = (seconds * (1.7 + (streak % 5) * 0.22) + scatter(streak, 1)) % 1;
+    const long = 26 + (streak % 4) * 11 + amount * 34;
+    // Each starts above the view, and far enough to one side to slant in.
+    const y = fall * height * 1.1 - 60;
+    const x = scatter(streak, 2) * (width + Math.abs(drift)) - Math.max(drift, 0) + (y * lean.x) / lean.y;
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + lean.x * long, y + lean.y * long);
+  }
+  ctx.lineWidth = 1.5 + amount * 1.5;
+  ctx.strokeStyle = `rgba(206, 220, 230, ${0.3 + 0.3 * amount})`;
+  ctx.stroke();
+}
+
+/**
  * Paints the windshield view.
  * @param {CanvasRenderingContext2D} ctx
  * @param {import('./rules.js').GameState} state
@@ -330,8 +381,10 @@ export function drawWindshield(ctx, state, day) {
   // The trees and poles along the horizon stand in front of the tornado.
   drawTreeLine(ctx, state, day, seconds, horizon);
 
-  // The weather between the car and the tornado. Each bit of debris or hail
-  // keeps its own track, worked out from its number and the clock.
+  // The weather between the car and the tornado. Each streak of rain, bit of
+  // debris or hailstone keeps its own track, worked out from its number and
+  // the clock.
+  drawRain(ctx, state, day, seconds);
 
   // art/inside-tornado.png: the direct hit. The tornado is all around, so
   // its wall fills the view and whirls past.
@@ -359,10 +412,12 @@ export function drawWindshield(ctx, state, day) {
     label(ctx, 'art/debris.png', width * 0.05, height * 0.2);
   }
 
-  // art/hail.png: hail falls, and bounces off the ground, inside the core.
-  if (inHailCore(state.car, storm, day)) {
+  // art/hail.png: hail falls, and bounces off the ground: a few stones just
+  // outside the hail core, and a barrage inside it.
+  const stones = Math.ceil(hailAmount(state.car, storm, day) * 90);
+  if (stones) {
     ctx.fillStyle = '#eef4f8';
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < stones; i++) {
       const fall = (seconds * (1.6 + (i % 3) * 0.4) + i * 0.071) % 1.25;
       const x = ((i * 0.618) % 1) * width;
       // Past the ground, the stone hops back up a little before it is gone.

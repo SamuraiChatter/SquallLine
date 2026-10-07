@@ -782,13 +782,24 @@ export function hailCore(storm, tuning) {
  * @param {Tuning} tuning
  */
 export function inHailCore(point, storm, tuning) {
+  return hailCoreOut(point, storm, tuning) <= 1;
+}
+
+/**
+ * How far out from the middle of the hail core a place is, as so many times
+ * the core's size: 0 is its middle and 1 its edge.
+ * @param {Point} point
+ * @param {Storm} storm
+ * @param {Tuning} tuning
+ */
+export function hailCoreOut(point, storm, tuning) {
   const core = hailCore(storm, tuning);
   const dx = point.x - core.x;
   const dy = point.y - core.y;
   // How far the place is along the core's length, and across it.
   const along = (dx + dy) / Math.SQRT2;
   const across = (dy - dx) / Math.SQRT2;
-  return (along / core.long) ** 2 + (across / core.wide) ** 2 <= 1;
+  return Math.hypot(along / core.long, across / core.wide);
 }
 
 /**
