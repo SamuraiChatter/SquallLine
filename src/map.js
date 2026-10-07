@@ -3,6 +3,7 @@
 // territory, and the roads are sorted into squares so that only the ones near
 // the view need drawing.
 
+import { drivingLines } from './freeways.js';
 import { buildNetwork } from './roads.js';
 
 // How many miles across each square is.
@@ -20,7 +21,8 @@ const tiers = [['motorway'], ['trunk', 'primary'], ['secondary'], ['tertiary', '
  * @property {Path2D} counties The county lines.
  * @property {{ kind: string, name: string, x: number, y: number }[]} places
  * @property {import('./roads.js').RoadNetwork} roads The roads the car
- *   drives on: every road that is drawn.
+ *   drives on: every road that is drawn, with each freeway as one line and
+ *   each interchange as one junction.
  */
 
 /**
@@ -68,13 +70,13 @@ export async function loadMap() {
 
   /** @type {GameMap['squares']} */
   const squares = new Map();
-  /** @type {{ x: number, y: number }[][]} */
-  const lines = [];
+  /** @type {import('./freeways.js').Road[]} */
+  const roads = [];
   for (const road of data.roads) {
     const tier = tierOf(road.class);
     if (tier < 0) continue;
     const points = road.points.map((/** @type {number[]} */ [lon, lat]) => toMiles(lon, lat));
-    lines.push(points);
+    roads.push({ class: road.class, points });
     // A road goes into every square it could pass through.
     const columns = points.map((/** @type {{ x: number }} */ p) => Math.floor(p.x / squareMiles));
     const rows = points.map((/** @type {{ y: number }} */ p) => Math.floor(p.y / squareMiles));
@@ -97,5 +99,5 @@ export async function loadMap() {
     ...toMiles(place.lon, place.lat),
   }));
 
-  return { squares, counties, places, roads: buildNetwork(lines) };
+  return { squares, counties, places, roads: buildNetwork(drivingLines(roads)) };
 }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 import { test } from 'node:test';
+import { drivingLines } from '../src/freeways.js';
 import { milesFrom, tierOf } from '../src/map.js';
 import { buildNetwork, drive, nearestSpot } from '../src/roads.js';
 
@@ -58,7 +59,7 @@ const roads = map.roads
     class: road.class,
     points: road.points.map(([lon, lat]) => toMiles(lon, lat)),
   }));
-const network = buildNetwork(roads.map((road) => road.points));
+const network = buildNetwork(drivingLines(roads));
 // The rural grid is the roads OpenStreetMap calls residential.
 const gridRoads = roads.filter((road) => road.class === 'residential');
 
@@ -189,4 +190,60 @@ test('the car can turn from a main road onto a grid road and back', () => {
     turns++;
   }
   assert.ok(turns > 20, `only ${turns} junctions were tried`);
+});
+
+/**
+ * How many roads lead out of the busiest point within a few yards of a place.
+ * @param {{ x: number, y: number }} place
+ */
+function waysNear(place) {
+  let most = 0;
+  for (let point = 0; point < network.xs.length; point++) {
+    if (Math.hypot(network.xs[point] - place.x, network.ys[point] - place.y) < 0.03) most = Math.max(most, network.ways[point].length);
+  }
+  return most;
+}
+
+test('Robinson Street meets Interstate 35 in Norman at one four-way junction', () => {
+  assert.equal(waysNear({ x: 0.813, y: -1.177 }), 4);
+});
+
+test('Rock Creek Road crosses Interstate 35 in Norman on a bridge, with no junction', () => {
+  assert.equal(waysNear({ x: 0.812, y: -0.146 }), 2);
+});
+
+test('no ramp off a freeway is left to drive on', () => {
+  const driven = new Set(network.xs.map((x, point) => `${x},${network.ys[point]}`));
+  const onOtherRoads = new Set(
+    roads.filter((road) => road.class !== 'motorway_link').flatMap((road) => road.points.map(({ x, y }) => `${x},${y}`)),
+  );
+  const onFreeway = new Set(
+    roads.filter((road) => road.class === 'motorway').flatMap((road) => road.points.map(({ x, y }) => `${x},${y}`)),
+  );
+  for (const road of roads) {
+    if (road.class !== 'motorway_link' || !road.points.some(({ x, y }) => onFreeway.has(`${x},${y}`))) continue;
+    for (const { x, y } of road.points) {
+      assert.ok(onOtherRoads.has(`${x},${y}`) || !driven.has(`${x},${y}`), `a ramp can be driven at ${x}, ${y}`);
+    }
+  }
+});
+
+test('driving each freeway as one line cuts no road off from the rest', () => {
+  /**
+   * The places that can be reached from Norman.
+   * @param {import('../src/roads.js').RoadNetwork} roadNetwork
+   */
+  const reachable = (roadNetwork) => {
+    const norman = map.places.find((/** @type {{ name: string }} */ place) => place.name === 'Norman');
+    const reached = new Set([nearestSpot(roadNetwork, toMiles(norman.lon, norman.lat)).to]);
+    for (const point of reached) for (const way of roadNetwork.ways[point]) reached.add(way);
+    return new Set([...reached].map((point) => `${roadNetwork.xs[point]},${roadNetwork.ys[point]}`));
+  };
+  const before = reachable(buildNetwork(roads.map((road) => road.points)));
+  const after = reachable(network);
+  // Everything still on the map that could be reached before still can be.
+  for (let point = 0; point < network.xs.length; point++) {
+    const place = `${network.xs[point]},${network.ys[point]}`;
+    assert.ok(!before.has(place) || after.has(place), `${place} is cut off`);
+  }
 });
