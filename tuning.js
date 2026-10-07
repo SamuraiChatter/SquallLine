@@ -29,6 +29,25 @@ export const tuning = {
   // the whole territory.
   minimapPixels: 300,
 
+  // How the storm looks on the radar: on the map, the minimap and the dash
+  // radar alike.
+  radar: {
+    // How big one square pixel of the radar picture is, in miles. Bigger is
+    // blockier.
+    pixelMiles: 0.2,
+
+    // How strong the hook's echo is, in dBZ, the unit a radar reports rain
+    // in. 20 is the lightest green, 35 turns yellow and 50 turns red. Smaller
+    // makes the hook harder to spot.
+    hookDbz: 40,
+
+    // How much of the map the rain hides, in percent: under the lightest
+    // rain, and under the hail core. Rain in between hides in between. 100
+    // hides the roads completely.
+    lightRainCovers: 35,
+    heavyRainCovers: 75,
+  },
+
   // How many miles the territory is from west to east, and from south to
   // north. The car cannot drive past its edge. These match the real map in
   // data/map.json, so they only change when the map is baked again.

@@ -3,7 +3,8 @@
 
 import { tuning } from '../tuning.js';
 import { squareMiles } from './map.js';
-import { dangerRingMiles, hailCore } from './rules.js';
+import { colourOf, coverOf, dbzAt, rainReach } from './radar.js';
+import { dangerRingMiles } from './rules.js';
 
 /**
  * Paints the game as it is right now.
@@ -42,7 +43,7 @@ export function draw(ctx, state, wholeTerritory, map, day) {
   ctx.strokeStyle = '#5b7488';
   ctx.strokeRect(-halfWide, -halfTall, halfWide * 2, halfTall * 2);
 
-  drawStorm(ctx, storm, day);
+  drawStorm(ctx, storm);
 
   if (storm.tornado > 0) {
     // The footage ring: film from inside it to get paid. A ring of no miles
@@ -83,7 +84,7 @@ export function draw(ctx, state, wholeTerritory, map, day) {
   // Back to pixels for the minimap. It stands in for the whole-territory
   // view, so it is only there while the view follows the car on a chase.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (!wholeTerritory && !state.dayOver) drawMinimap(ctx, state, map, day, pixelsPerMile);
+  if (!wholeTerritory && !state.dayOver) drawMinimap(ctx, state, map, pixelsPerMile);
 }
 
 // The minimap's map: the county lines and main roads of the whole territory.
@@ -98,11 +99,10 @@ let minimapMap;
  * @param {CanvasRenderingContext2D} ctx Set up to draw in pixels.
  * @param {import('./rules.js').GameState} state
  * @param {import('./map.js').GameMap} map
- * @param {import('./rules.js').Tuning} day The numbers today plays by.
  * @param {number} viewPixelsPerMile How many pixels a mile takes up in the
  *   main view.
  */
-function drawMinimap(ctx, state, map, day, viewPixelsPerMile) {
+function drawMinimap(ctx, state, map, viewPixelsPerMile) {
   const { width, height } = ctx.canvas;
   const { car } = state;
   const wide = tuning.minimapPixels;
@@ -133,7 +133,7 @@ function drawMinimap(ctx, state, map, day, viewPixelsPerMile) {
   // Draw in miles with north at the top, as the map does.
   ctx.translate(left + wide / 2, top + tall / 2);
   ctx.scale(pixelsPerMile, -pixelsPerMile);
-  drawStorm(ctx, state.storm, day);
+  drawStorm(ctx, state.storm);
   // What the main view shows, and the car in the middle of it.
   const viewWide = width / viewPixelsPerMile;
   const viewTall = height / viewPixelsPerMile;
@@ -156,11 +156,10 @@ function drawMinimap(ctx, state, map, day, viewPixelsPerMile) {
  * windshield view.
  * @param {CanvasRenderingContext2D} ctx
  * @param {import('./rules.js').GameState} state
- * @param {import('./rules.js').Tuning} day The numbers today plays by.
  * @param {{ left: number, top: number, wide: number, tall: number }} box
  *   Where on the screen it goes, in pixels.
  */
-export function drawDashRadar(ctx, state, day, box) {
+export function drawDashRadar(ctx, state, box) {
   const pixelsPerMile = box.wide / tuning.camera.dashRadarMiles;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -174,7 +173,7 @@ export function drawDashRadar(ctx, state, day, box) {
   ctx.translate(box.left + box.wide / 2, box.top + box.tall / 2);
   ctx.scale(pixelsPerMile, -pixelsPerMile);
   ctx.translate(-state.car.x, -state.car.y);
-  drawStorm(ctx, state.storm, day);
+  drawStorm(ctx, state.storm);
   ctx.beginPath();
   ctx.arc(state.car.x, state.car.y, 7 / pixelsPerMile, 0, Math.PI * 2);
   ctx.fillStyle = '#ffd24a';
@@ -249,54 +248,93 @@ export function drawMap(ctx, map, wholeTerritory, middle, pixelsPerMile) {
   ctx.restore();
 }
 
+// The radar picture: one pixel for each square of the territory that is
+// tuning.radar.pixelMiles across, north at the top. The map, the minimap and
+// the dash radar all show this one picture.
+const radar = (() => {
+  const { pixelMiles } = tuning.radar;
+  const wide = Math.ceil(tuning.territoryMilesWide / pixelMiles);
+  const tall = Math.ceil(tuning.territoryMilesTall / pixelMiles);
+  return {
+    pixelMiles,
+    wide,
+    tall,
+    /** @type {HTMLCanvasElement | undefined} */
+    canvas: undefined,
+    /** @type {ImageData | undefined} */
+    image: undefined,
+    /** @type {import('./rules.js').Storm | undefined} The storm it shows. */
+    storm: undefined,
+  };
+})();
+
 /**
- * Paints the storm the way a radar shows it: light rain in green on the
- * outside, through yellow and red, to a purple core.
- * @param {CanvasRenderingContext2D} ctx
+ * Brings the radar picture up to date with the storm. Call it once a frame,
+ * before painting.
  * @param {import('./rules.js').Storm} storm
  * @param {import('./rules.js').Tuning} day The numbers today plays by.
  */
-function drawStorm(ctx, storm, day) {
-  // Each ring: its colour, how far it stretches, and how far its middle sits
-  // to the north-east of the storm's own middle. All in miles.
-  const rings = [
-    { colour: '#1f9d3a', long: 7, wide: 4.5, shift: 2.2 },
-    { colour: '#e8d21d', long: 5, wide: 3.1, shift: 1.4 },
-    { colour: '#e02a1f', long: 3.2, wide: 2, shift: 0.7 },
-  ];
-  ctx.save();
-  ctx.globalAlpha = 0.85;
-  // A soft glow, so the storm stands out over the map.
-  ctx.shadowColor = '#6dff8a';
-  ctx.shadowBlur = 40;
-  for (const ring of rings) {
-    ctx.beginPath();
-    ctx.ellipse(storm.x + ring.shift, storm.y + ring.shift, ring.long, ring.wide, Math.PI / 4, 0, Math.PI * 2);
-    ctx.fillStyle = ring.colour;
-    ctx.fill();
+export function paintRadar(storm, day) {
+  // A storm that has not moved, as on the pause screen, looks the same.
+  if (storm === radar.storm) return;
+  radar.storm = storm;
+  if (!radar.canvas) {
+    radar.canvas = document.createElement('canvas');
+    radar.canvas.width = radar.wide;
+    radar.canvas.height = radar.tall;
   }
-  // The purple core is the hail zone, so it is drawn exactly where the rules
-  // say hail falls.
-  const core = hailCore(storm, day);
-  ctx.beginPath();
-  ctx.ellipse(core.x, core.y, core.long, core.wide, Math.PI / 4, 0, Math.PI * 2);
-  ctx.fillStyle = '#b03be0';
-  ctx.fill();
+  const to = /** @type {CanvasRenderingContext2D} */ (radar.canvas.getContext('2d'));
+  radar.image ??= to.createImageData(radar.wide, radar.tall);
+  const { data } = radar.image;
+  const { pixelMiles, wide, tall } = radar;
+  const { hookDbz, lightRainCovers, heavyRainCovers } = tuning.radar;
+  const west = -tuning.territoryMilesWide / 2;
+  const north = tuning.territoryMilesTall / 2;
 
-  // The hook curls out of the storm's south-west side. As it grows it gets
-  // longer and winds tighter.
+  data.fill(0);
+  // Only the pixels the storm's rain can reach need working out.
+  const firstColumn = Math.max(0, Math.floor((storm.x - rainReach.back - west) / pixelMiles));
+  const lastColumn = Math.min(wide - 1, Math.ceil((storm.x + rainReach.front - west) / pixelMiles));
+  const firstRow = Math.max(0, Math.floor((north - storm.y - rainReach.front) / pixelMiles));
+  const lastRow = Math.min(tall - 1, Math.ceil((north - storm.y + rainReach.back) / pixelMiles));
+  for (let row = firstRow; row <= lastRow; row++) {
+    for (let column = firstColumn; column <= lastColumn; column++) {
+      // The rain at the middle of the pixel colours the whole pixel.
+      const spot = { x: west + (column + 0.5) * pixelMiles, y: north - (row + 0.5) * pixelMiles };
+      const dbz = dbzAt(spot, storm, day, hookDbz);
+      const colour = colourOf(dbz);
+      if (!colour) continue;
+      const at = (row * wide + column) * 4;
+      data[at] = colour[1];
+      data[at + 1] = colour[2];
+      data[at + 2] = colour[3];
+      // Heavier rain hides more of the map under it.
+      data[at + 3] = 2.55 * coverOf(dbz, lightRainCovers, heavyRainCovers);
+    }
+  }
+  to.putImageData(radar.image, 0, 0);
+}
+
+/**
+ * Paints the storm the way a radar shows it: blocky pixels coloured by how
+ * hard it is raining, from light green through yellow and red to the purple
+ * of the hail core, with the map showing through.
+ * @param {CanvasRenderingContext2D} ctx Already set up to draw in miles.
+ * @param {import('./rules.js').Storm} storm
+ */
+function drawStorm(ctx, storm) {
+  if (radar.canvas) {
+    ctx.save();
+    // The picture's first row is the north edge, so it is drawn upside down
+    // in a view where north is up. No smoothing: the pixels stay square.
+    ctx.scale(1, -1);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(radar.canvas, -tuning.territoryMilesWide / 2, -tuning.territoryMilesTall / 2, radar.wide * radar.pixelMiles, radar.tall * radar.pixelMiles);
+    ctx.restore();
+  }
+
   const { x: hookX, y: hookY } = storm.funnel;
-  if (storm.hook > 0) {
-    ctx.beginPath();
-    ctx.arc(hookX, hookY, 1.9 - 0.8 * storm.hook, 0.25 * Math.PI, (0.25 - 1.5 * storm.hook) * Math.PI, true);
-    ctx.lineWidth = 0.9;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#e02a1f';
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  // The tornado marker sits inside the hook: a white triangle, point down.
+  // The tornado marker sits at the hook's tip: a white triangle, point down.
   // A stronger tornado has a bigger one, and it shrinks as the tornado dies.
   if (storm.tornado > 0) {
     const { mapMiles } = tuning.tornado;
