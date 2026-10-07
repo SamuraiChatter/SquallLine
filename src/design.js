@@ -41,7 +41,7 @@ const reach = 16 / pixelsPerMile;
 const strengthColours = ['#7fd4ff', '#7dff8a', '#ffe14a', '#ffa63a', '#ff5a3a', '#ff3ad0'];
 
 /** @type {import('./storms.js').DesignedStorm} */
-let storm = { path: [], tornadoes: [] };
+let storm = { path: [], tornadoes: [], falseAlarms: [] };
 // Carry on with the storm that was being designed, if there is one.
 try {
   storm = readStorm(sessionStorage.getItem(designKey) ?? '');
@@ -117,8 +117,12 @@ function say(words) {
 
 /** Keeps the storm for later, redraws the map and lists the tornadoes. */
 function changed() {
-  // A path with fewer than two corners has nowhere to put a tornado.
-  if (storm.path.length < 2) storm.tornadoes = [];
+  // A path with fewer than two corners has nowhere to put a tornado, or a
+  // false alarm typed into a storm file that was loaded.
+  if (storm.path.length < 2) {
+    storm.tornadoes = [];
+    storm.falseAlarms = [];
+  }
   try {
     if (storm.path.length < 2) sessionStorage.removeItem(designKey);
     else sessionStorage.setItem(designKey, writeStorm(storm));
@@ -265,7 +269,7 @@ element('play').addEventListener('click', () => {
 
 element('clear').addEventListener('click', () => {
   if (!confirm('Clear the map and start a new storm?')) return;
-  storm = { path: [], tornadoes: [] };
+  storm = { path: [], tornadoes: [], falseAlarms: [] };
   touchdown = null;
   say('');
   changed();

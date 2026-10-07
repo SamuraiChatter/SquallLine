@@ -97,6 +97,8 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @typedef {object} Day
  * @property {Point[]} path The corners of the storm's path.
  * @property {{ start: number, end: number, strength?: number }[]} tornadoes
+ * @property {{ start: number, end: number }[]} [falseAlarms] Stretches of the
+ *   path where a hook grows, holds and fades with no tornado.
  * @property {{ ringMiles: number, payAtEdge: number, payAtTornado: number }} footage
  */
 
@@ -130,7 +132,7 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * The numbers one day plays by: the day's storm and footage numbers, set in
  * among what the days share, with the vehicle's parts counted in.
  * @typedef {object} DayNumbers
- * @property {RunTuning['storm'] & Pick<Day, 'path' | 'tornadoes'>} storm
+ * @property {RunTuning['storm'] & Pick<Day, 'path' | 'tornadoes' | 'falseAlarms'>} storm
  * @property {Day['footage']} footage
  * @property {RunTuning['danger'] & { flipDamage?: number }} danger With a
  *   roll cage, flipDamage is how much of the damage meter a flip fills
@@ -157,7 +159,7 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @returns {Omit<T, 'danger' | 'anchor' | 'wind'> & Tuning}
  */
 export function dayTuning(tuning, day, owned = []) {
-  const { path, tornadoes, footage } = tuning.days[day - 1];
+  const { path, tornadoes, falseAlarms, footage } = tuning.days[day - 1];
   const parts = tuning.parts.filter((part) => owned.includes(part.id));
   /**
    * What the parts multiply one of the game's numbers by, between them.
@@ -170,7 +172,7 @@ export function dayTuning(tuning, day, owned = []) {
     camera: { ...tuning.camera, viewfinderDegrees: tuning.camera.viewfinderDegrees * times('viewfinderTimes') },
     dashRadar: parts.some((part) => part.dashRadar),
     wind: { ...tuning.wind, gauge: parts.some((part) => part.windGauge) },
-    storm: { ...tuning.storm, path, tornadoes },
+    storm: { ...tuning.storm, path, tornadoes, falseAlarms },
     footage: { ...footage, payAtEdge: footage.payAtEdge * times('payTimes'), payAtTornado: footage.payAtTornado * times('payTimes') },
     danger: {
       ...tuning.danger,
@@ -835,8 +837,19 @@ function stormAt(miles, tuning) {
   } else if (next) {
     hook = Math.max(0, 1 - (next.start - along) / tuning.hookLead);
   }
+  // A false alarm's hook grows over the same lead as a real one's, holds
+  // from its start to its end, then fades over the same lead again.
+  const falseAlarms = tuning.falseAlarms ?? [];
+  for (const { start, end } of falseAlarms) {
+    const outside = along < start ? start - along : Math.max(0, along - end);
+    // Inside it the hook is full, whatever the lead: even none at all.
+    hook = Math.max(hook, outside > 0 ? 1 - outside / tuning.hookLead : 1);
+  }
   const last = tuning.tornadoes.at(-1);
-  const spent = last !== undefined && along >= last.end;
+  // The storm has nothing left once its last tornado has died and any false
+  // alarm after it has faded. A storm with no tornadoes never runs out.
+  const fading = falseAlarms.some(({ end }) => along < Math.min(1, end + tuning.hookLead));
+  const spent = last !== undefined && along >= last.end && !fading;
   const strength = (onGround ?? next)?.strength ?? 0;
   return { miles, x, y, hook, tornado, funnel: funnelOf({ x, y }), strength, spent };
 }

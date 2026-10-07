@@ -1101,3 +1101,98 @@ test('each day starts with no reports', () => {
   state = nextDay(nextDay(state, runTuning, roads), runTuning, roads);
   assert.deepEqual(state.reports, []);
 });
+
+// False alarms. This storm crosses 20 miles in 20 seconds with a hook lead of
+// two seconds. Its false alarm runs from 6 seconds in to 10.
+const alarmTuning = {
+  ...stormTuning,
+  spotters: { ...stormTuning.spotters, everySeconds: 1 },
+  storm: { ...stormTuning.storm, hookLead: 0.1, tornadoes: [], falseAlarms: [{ start: 0.3, end: 0.5 }] },
+};
+
+test('a false alarm grows a hook before its start, holds it to its end, then loses it', () => {
+  // Right at the edge of the lead the sums leave a hair of hook.
+  assert.ok(stormAfter(3.5, alarmTuning).hook === 0 && stormAfter(4, alarmTuning).hook < 1e-9);
+  assert.ok(Math.abs(stormAfter(5, alarmTuning).hook - 0.5) < 1e-9);
+  assert.equal(stormAfter(6, alarmTuning).hook, 1);
+  assert.equal(stormAfter(8, alarmTuning).hook, 1);
+  assert.equal(stormAfter(10, alarmTuning).hook, 1);
+  assert.ok(Math.abs(stormAfter(11, alarmTuning).hook - 0.5) < 1e-9);
+  assert.ok(stormAfter(12, alarmTuning).hook < 1e-9 && stormAfter(12.5, alarmTuning).hook === 0);
+});
+
+test('with no hook lead at all, a false alarm is a full hook from its start to its end and nothing either side', () => {
+  const sudden = { ...alarmTuning, storm: { ...alarmTuning.storm, hookLead: 0 } };
+  assert.equal(stormAfter(5.75, sudden).hook, 0);
+  assert.equal(stormAfter(6, sudden).hook, 1);
+  assert.equal(stormAfter(10, sudden).hook, 1);
+  assert.equal(stormAfter(10.25, sudden).hook, 0);
+});
+
+test('no tornado touches down at any time in a false alarm', () => {
+  for (let seconds = 0; seconds <= 20; seconds += 0.5) assert.equal(stormAfter(seconds, alarmTuning).tornado, 0);
+});
+
+test('through a false alarm the car takes no damage and filming pays nothing, right where a tornado would be', () => {
+  // The storm stands still with its hook curling over the crossroads, where
+  // the car is parked with the camera on it.
+  const path = [{ x: 2.6, y: 2.6 }, { x: 12.6, y: 2.6 }];
+  const standing = { ...stormTuning.storm, path, milesPerSecond: 0, tornadoes: [] };
+  const alarm = { ...stormTuning, storm: { ...standing, falseAlarms: [{ start: 0, end: 0.5 }] } };
+  let state = toggleFilming(newGame(alarm, roads));
+  assert.equal(state.storm.hook, 1);
+  for (let i = 0; i < 20; i++) state = step(state, still, 0.25, alarm, roads);
+  assert.equal(state.damage, 0);
+  assert.equal(state.debrisStrikes, 0);
+  assert.equal(state.footage, 0);
+  assert.equal(state.money, 0);
+  assert.equal(state.dayOver, false);
+
+  // The same spot under a real tornado wrecks the car at once.
+  const real = { ...stormTuning, storm: { ...standing, tornadoes: [{ start: 0, end: 0.5 }] } };
+  assert.equal(step(toggleFilming(newGame(real, roads)), still, 0.25, real, roads).wrecked, true);
+});
+
+test('a false alarm followed by a tornado grows a hook twice, and only the second brings a tornado', () => {
+  const both = { ...alarmTuning, storm: { ...alarmTuning.storm, tornadoes: [{ start: 0.7, end: 0.9 }] } };
+  assert.deepEqual([stormAfter(8, both).hook, stormAfter(8, both).tornado], [1, 0]);
+  // The first hook has faded by 12 seconds, as the second starts to grow.
+  assert.ok(stormAfter(12, both).hook < 1e-9);
+  assert.ok(Math.abs(stormAfter(13, both).hook - 0.5) < 1e-9);
+  assert.deepEqual([stormAfter(14, both).hook, stormAfter(14, both).tornado], [1, 1]);
+});
+
+test('a false alarm fading into the next hook never shows less hook than either', () => {
+  // The false alarm ends at 10 seconds and the tornado touches down at 11.
+  const close = { ...alarmTuning, storm: { ...alarmTuning.storm, tornadoes: [{ start: 0.55, end: 0.9 }] } };
+  assert.ok(Math.abs(stormAfter(10.5, close).hook - 0.75) < 1e-9);
+  assert.equal(stormAfter(10.5, close).tornado, 0);
+});
+
+test('spotters call in a false alarm as they would a real hook, but never a tornado', () => {
+  const heard = said(watched(13, alarmTuning));
+  // The rings of the early reports have gone by now, so listen all the way.
+  const all = new Set();
+  for (let seconds = 5; seconds <= 13; seconds += 0.25) for (const words of said(watched(seconds, alarmTuning))) all.add(words);
+  assert.deepEqual([...all].sort(), ['funnel cloud', 'rotating wall cloud']);
+  assert.ok(!heard.includes('TORNADO on the ground'));
+});
+
+test('the day does not end on a false alarm, and a storm with only false alarms never ends by itself', () => {
+  assert.equal(stormAfter(20, alarmTuning).spent, false);
+});
+
+test('a false alarm after the last tornado plays out before the day ends', () => {
+  const after = { ...alarmTuning, storm: { ...alarmTuning.storm, tornadoes: [{ start: 0.1, end: 0.2 }] } };
+  // The tornado dies at 4 seconds. The false alarm ends at 10 and fades by 12.
+  assert.equal(stormAfter(4, after).spent, false);
+  assert.equal(stormAfter(11.5, after).spent, false);
+  assert.equal(stormAfter(12, after).spent, true);
+});
+
+test("a day's false alarms are part of the numbers the day plays by, and a day without any has none", () => {
+  const days = [{ ...runTuning.days[0], falseAlarms: [{ start: 0.05, end: 0.1 }] }, runTuning.days[1]];
+  const withAlarms = { ...runTuning, days };
+  assert.deepEqual(dayTuning(withAlarms, 1).storm.falseAlarms, [{ start: 0.05, end: 0.1 }]);
+  assert.equal(dayTuning(withAlarms, 2).storm.falseAlarms, undefined);
+});

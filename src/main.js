@@ -16,8 +16,8 @@ const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
 document.title = tuning.title;
 
 /**
- * Says on the screen that something did not load: otherwise the game is just
- * black.
+ * Says on the screen that something did not load, and why: otherwise the
+ * game is just black.
  * @param {string} words
  * @returns {(error: unknown) => never}
  */
@@ -26,6 +26,8 @@ const sayAndStop = (words) => (error) => {
   ctx.font = '48px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText(words, canvas.width / 2, canvas.height / 2);
+  ctx.font = '36px system-ui, sans-serif';
+  if (error instanceof Error) ctx.fillText(error.message, canvas.width / 2, canvas.height / 2 + 70, canvas.width * 0.9);
   throw error;
 };
 
@@ -53,7 +55,13 @@ async function loadDays() {
       if (!day.stormFile) return day;
       const response = await fetch(`storms/${day.stormFile}`);
       if (!response.ok) throw new Error(`storms/${day.stormFile} answered ${response.status}`);
-      return { ...day, ...readStorm(await response.text()) };
+      const text = await response.text();
+      try {
+        return { ...day, ...readStorm(text) };
+      } catch (error) {
+        // Name the file, so the creative lead knows which one to open.
+        throw new Error(`storms/${day.stormFile}: ${error instanceof Error ? error.message : error}`);
+      }
     }),
   );
 }

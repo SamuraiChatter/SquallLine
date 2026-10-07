@@ -19,6 +19,17 @@
  * @property {Point[]} path The corners of the storm's path, in miles east
  *   and north of the middle of the territory.
  * @property {Tornado[]} tornadoes In order along the path, never overlapping.
+ * @property {FalseAlarm[]} falseAlarms In order along the path, never
+ *   overlapping each other or a tornado.
+ */
+
+/**
+ * One false alarm of a designed storm: a stretch of the path where a hook
+ * grows, holds and fades with no tornado.
+ * @typedef {object} FalseAlarm
+ * @property {number} start Where along the storm's path the hook is fully
+ *   grown: 0 is the start of the path, 1 is the end.
+ * @property {number} end Where along the path it starts to fade.
  */
 
 // Where the browser keeps the storm being designed, so that it is still
@@ -168,6 +179,7 @@ export function writeStorm(storm) {
     {
       path: storm.path.map(({ x, y }) => ({ x: round(x), y: round(y) })),
       tornadoes: storm.tornadoes.map(({ start, end, strength }) => ({ start: round(start), end: round(end), strength })),
+      falseAlarms: storm.falseAlarms.map(({ start, end }) => ({ start: round(start), end: round(end) })),
     },
     null,
     2,
@@ -188,15 +200,18 @@ export function readStorm(text) {
   } catch {
     throw new Error('This is not a storm file.');
   }
-  const { path, tornadoes } = /** @type {{ path?: unknown, tornadoes?: unknown }} */ (file ?? {});
+  // A file saved before there were false alarms has none.
+  const { path, tornadoes, falseAlarms = [] } = /** @type {{ path?: unknown, tornadoes?: unknown, falseAlarms?: unknown }} */ (file ?? {});
   if (!Array.isArray(path) || !Array.isArray(tornadoes)) throw new Error('This is not a storm file.');
   if (path.length < 2 || path.length > mostCorners) throw new Error('The storm path needs between 2 and 200 corners.');
   if (tornadoes.length > mostTornadoes) throw new Error('The storm has too many tornadoes.');
+  if (!Array.isArray(falseAlarms)) throw new Error('The false alarms are not a list.');
+  if (falseAlarms.length > mostTornadoes) throw new Error('The storm has too many false alarms.');
 
   /** @param {unknown} n */
   const isNumber = (n) => typeof n === 'number' && Number.isFinite(n);
   /** @type {DesignedStorm} */
-  const storm = { path: [], tornadoes: [] };
+  const storm = { path: [], tornadoes: [], falseAlarms: [] };
   for (const corner of path) {
     const { x, y } = corner ?? {};
     if (!isNumber(x) || !isNumber(y) || Math.abs(x) > furthestMiles || Math.abs(y) > furthestMiles) {
@@ -211,6 +226,18 @@ export function readStorm(text) {
     if (!inOrder) throw new Error('The tornadoes are out of order or overlap.');
     if (!Number.isInteger(strength) || strength < 0 || strength > 5) throw new Error('A tornado has a strength that is not EF0 to EF5.');
     storm.tornadoes.push({ start, end, strength });
+    last = end;
+  }
+  last = -leastShare;
+  for (const falseAlarm of falseAlarms) {
+    const { start, end } = falseAlarm ?? {};
+    const inOrder = isNumber(start) && isNumber(end) && start >= 0 && end <= 1 && end > start && start > last;
+    if (!inOrder) throw new Error('The false alarms are out of order or overlap.');
+    // A hook cannot be both a false alarm and the real thing.
+    if (storm.tornadoes.some((tornado) => start <= tornado.end && end >= tornado.start)) {
+      throw new Error('A false alarm overlaps a tornado.');
+    }
+    storm.falseAlarms.push({ start, end });
     last = end;
   }
   return storm;
