@@ -14,8 +14,10 @@ import { dangerRingMiles, radarMarks } from './rules.js';
  *   follow the car.
  * @param {import('./map.js').GameMap} map
  * @param {import('./rules.js').Tuning} day The numbers today plays by.
+ * @param {import('./roads.js').JunctionAhead | null} ahead The next junction
+ *   ahead of the car, if there is one to show.
  */
-export function draw(ctx, state, wholeTerritory, map, day) {
+export function draw(ctx, state, wholeTerritory, map, day, ahead) {
   const { width, height } = ctx.canvas;
   const { car, storm } = state;
   const halfWide = tuning.territoryMilesWide / 2;
@@ -78,6 +80,10 @@ export function draw(ctx, state, wholeTerritory, map, day) {
     ctx.stroke();
     ctx.setLineDash([]);
   }
+
+  // Chevrons at the next junction. They are a driving aid, so they go over
+  // the rain, and only in the view the player drives in.
+  if (ahead && !wholeTerritory) drawChevrons(ctx, ahead, pixelsPerMile);
 
   // The car. It keeps its size on screen in both views.
   ctx.beginPath();
@@ -295,6 +301,45 @@ export function drawMap(ctx, map, wholeTerritory, middle, pixelsPerMile) {
     ctx.fillText(place.name, x, y);
   }
   ctx.restore();
+}
+
+/**
+ * Paints a chevron for each road out of the next junction, pointing along
+ * it. The one the car will take with the arrows held now is lit.
+ * @param {CanvasRenderingContext2D} ctx Already set up to draw in miles.
+ * @param {import('./roads.js').JunctionAhead} ahead
+ * @param {number} pixelsPerMile
+ */
+function drawChevrons(ctx, ahead, pixelsPerMile) {
+  // How far out from the junction a chevron's point is, and how far back
+  // and out to each side its arms reach, in miles. They keep their size on
+  // screen.
+  const out = 40 / pixelsPerMile;
+  const arm = 11 / pixelsPerMile;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // The dark edges first, then the unlit chevrons, then the lit one on top.
+  const coats = [
+    { colour: '#0b1118', pixels: 9, lit: [true, false] },
+    { colour: '#7f909e', pixels: 4, lit: [false] },
+    { colour: '#ffd24a', pixels: 5, lit: [true] },
+  ];
+  for (const coat of coats) {
+    ctx.beginPath();
+    for (const way of ahead.ways) {
+      if (!coat.lit.includes(way.lit)) continue;
+      const tipX = ahead.x + way.x * out;
+      const tipY = ahead.y + way.y * out;
+      ctx.moveTo(tipX - way.x * arm - way.y * arm, tipY - way.y * arm + way.x * arm);
+      ctx.lineTo(tipX, tipY);
+      ctx.lineTo(tipX - way.x * arm + way.y * arm, tipY - way.y * arm - way.x * arm);
+    }
+    ctx.lineWidth = coat.pixels / pixelsPerMile;
+    ctx.strokeStyle = coat.colour;
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+  ctx.lineJoin = 'miter';
 }
 
 /**

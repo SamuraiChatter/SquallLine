@@ -6,6 +6,7 @@ import { draw, sweepRadar } from './draw.js';
 import { drawGarage } from './garage.js';
 import { loadMap } from './map.js';
 import { drawAbout, drawBriefing, drawDamage, drawDayChoice, drawFinalScore, drawMoney, drawNewGameCheck, drawPause, drawReport, drawSummary, drawTitle, drawTrialNote } from './hud.js';
+import { junctionAhead } from './roads.js';
 import { beginChase, buy, dayTuning, toggleAnchor, freePlay, headHome, newRun, newSave, nextDay, readSave, resume, runFinished, saveKey, saveOf, spotters, step, strongest, toggleFilming, toggleRadarView } from './rules.js';
 import { designKey, readStorm } from './storms.js';
 import { drawWindshield } from './windshield.js';
@@ -249,7 +250,11 @@ function frame(now) {
   sweepRadar(state, game);
   // The briefing sits over the whole territory, with the storm coming in.
   if (state.filming) drawWindshield(ctx, state, game);
-  else draw(ctx, state, wholeTerritory || state.briefing, map, game);
+  else {
+    // The next junction ahead, while there is a chase to drive.
+    const ahead = state.briefing || state.dayOver ? null : junctionAhead(map.roads, state.road, steering);
+    draw(ctx, state, wholeTerritory || state.briefing, map, game, ahead);
+  }
   drawMoney(ctx, state);
   drawDamage(ctx, state, now - struckAt < 180, game);
   drawReport(ctx, state);
