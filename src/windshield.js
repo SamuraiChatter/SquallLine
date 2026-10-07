@@ -7,7 +7,7 @@
 import { tuning } from '../tuning.js';
 import { drawDashRadar } from './draw.js';
 import { anchorWait, cameraOffFunnel, inDebrisZone, inHailCore, insideTornado, milesToFunnel, payPerSecond, tornadoInFrame, windMph } from './rules.js';
-import { skyDarkness, treeLean } from './scene.js';
+import { funnelHalfWidth, funnelReach, skyDarkness, tornadoShape, treeLean } from './scene.js';
 
 /**
  * Writes a placeholder's file name on it.
@@ -23,15 +23,6 @@ function label(ctx, fileName, x, y) {
   ctx.textBaseline = 'top';
   ctx.fillText(fileName, x, y);
 }
-
-// The tornado's shape, weakest first: a rope for EF0 and EF1, a cone for EF2
-// and EF3, a wedge for EF4 and EF5. Each has its own picture file, and is so
-// wide at the cloud and at the ground, as a share of how tall it is.
-const shapes = [
-  { fileName: 'art/tornado-rope.png', top: 0.09, foot: 0.03 },
-  { fileName: 'art/tornado-cone.png', top: 0.3, foot: 0.05 },
-  { fileName: 'art/tornado-wedge.png', top: 0.55, foot: 0.3 },
-];
 
 // How far down the windshield the storm's cloud base hangs, as a share of
 // the windshield's height.
@@ -193,6 +184,132 @@ function drawTreeLine(ctx, state, day, seconds, horizon) {
 }
 
 /**
+ * Paints the tornado: a funnel that turns, hanging from the cloud. How far
+ * left or right it sits follows its direction from the car, its size how
+ * near it is, and its shape its strength. A funnel that is still forming
+ * reaches part of the way down.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {import('./rules.js').GameState} state
+ * @param {number} seconds The clock.
+ * @param {number} horizon How far down the screen the horizon is, in pixels.
+ */
+function drawTornado(ctx, state, seconds, horizon) {
+  const { width, height } = ctx.canvas;
+  const { storm } = state;
+  const reach = funnelReach(storm, tuning.spotters.funnelCloudHook);
+  const x = acrossOf(ctx, cameraOffFunnel(state));
+  if (!reach || x < -width || x > width * 2) return;
+
+  // Twice as near looks twice as tall, until it fills the sky from the
+  // cloud base down.
+  const deck = height * cloudBase;
+  const tall = Math.min(horizon - deck * 0.85, (horizon * 1.6) / Math.max(milesToFunnel(state), 0.5));
+  const top = horizon - tall;
+  const { name, top: topWide } = tornadoShape(storm.strength);
+  // A rope snakes about; a cone and a wedge hardly bend.
+  const bend = name === 'rope' ? 0.07 : name === 'cone' ? 0.02 : 0.008;
+
+  // The storm's own cloud comes down from the cloud base to the top of the
+  // funnel: the further off the tornado, the lower on the screen that is.
+  ctx.fillStyle = '#171c22';
+  ctx.beginPath();
+  const lumps = 5;
+  for (let lump = 0; lump <= lumps; lump++) {
+    const down = lump / lumps;
+    const y = deck * 0.8 + (top - deck * 0.8) * down;
+    const wide = tall * topWide * (3 - 1.6 * down) + 240 - 190 * down;
+    ctx.moveTo(x + wide, y);
+    ctx.ellipse(x + Math.sin(lump * 2.1 + seconds * 0.2) * 12, y, wide, Math.max(18, (top - deck * 0.8) / lumps) + 14, 0, 0, Math.PI * 2);
+  }
+  ctx.fill();
+
+  // The funnel's edges, row by row from the cloud down. They are ragged, and
+  // waver with the clock, each side in its own time.
+  const rows = 30;
+  /** @type {{ y: number, middle: number, half: number }[]} */
+  const funnel = [];
+  for (let row = 0; row <= rows; row++) {
+    const down = row / rows;
+    funnel.push({
+      y: top + down * reach * tall,
+      middle: x + Math.sin(down * 3.2 + seconds * 1.3) * tall * bend * down,
+      half: funnelHalfWidth(storm.strength, down, storm.tornado) * tall,
+    });
+  }
+  /**
+   * @param {number} row
+   * @param {number} side -1 for the left edge, 1 for the right.
+   */
+  const edge = (row, side) => {
+    const { middle, half } = funnel[row];
+    const ragged = 1 + 0.07 * Math.sin(row * 0.9 + seconds * 5 * side) + 0.05 * Math.sin(row * 2.3 - seconds * 8 + side);
+    return middle + side * (half * ragged + 1.5);
+  };
+  ctx.save();
+  ctx.beginPath();
+  for (let row = 0; row <= rows; row++) ctx.lineTo(edge(row, -1), funnel[row].y);
+  for (let row = rows; row >= 0; row--) ctx.lineTo(edge(row, 1), funnel[row].y);
+  ctx.closePath();
+  // Lit from the left, so it reads as round, and pale enough to stand out
+  // from the dark sky behind it.
+  const body = ctx.createLinearGradient(x - tall * topWide, 0, x + tall * topWide, 0);
+  body.addColorStop(0, '#8a9096');
+  body.addColorStop(0.45, '#5b6168');
+  body.addColorStop(1, '#2b3036');
+  ctx.fillStyle = body;
+  ctx.fill();
+
+  // What makes it turn: bands and streaks that slide across its face from
+  // right to left, quickest in the middle, and are gone round the back.
+  ctx.clip();
+  ctx.lineCap = 'round';
+  const bands = 11;
+  for (let band = 0; band < bands; band++) {
+    const { y, middle, half } = funnel[Math.round(((band + 0.5) / bands) * rows)];
+    for (let streak = 0; streak < 4; streak++) {
+      const turned = (seconds * (0.45 + 0.12 * (band % 3)) + streak / 4 + band * 0.37) % 1;
+      const facing = Math.sin(turned * Math.PI);
+      const across = middle + Math.cos(turned * Math.PI) * half;
+      const long = half * 0.45 * facing + 5;
+      ctx.beginPath();
+      ctx.moveTo(across - long, y + long * 0.22);
+      ctx.lineTo(across + long, y - long * 0.22);
+      ctx.lineWidth = Math.max(2.5, tall * 0.014);
+      ctx.strokeStyle = streak % 2 ? `rgba(214, 220, 224, ${0.34 * facing})` : `rgba(16, 19, 23, ${0.5 * facing})`;
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ctx.lineCap = 'butt';
+  // A collar of cloud hides where the funnel meets the cloud above it.
+  ctx.fillStyle = '#171c22';
+  ctx.beginPath();
+  ctx.ellipse(x, top, tall * topWide * 1.3 + 24, tall * 0.045 + 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // The debris cloud whirls at the foot of a tornado on the ground.
+  if (storm.tornado <= 0) return;
+  const foot = funnel[rows];
+  const wide = foot.half * 2.2 + tall * 0.07 + 6;
+  const high = tall * 0.075 + 6;
+  ctx.fillStyle = 'rgba(74, 60, 44, 0.9)';
+  ctx.beginPath();
+  ctx.ellipse(foot.middle, horizon, wide, high, 0, Math.PI, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#5a4732';
+  for (let bit = 0; bit < 16; bit++) {
+    const round = seconds * (3 + (bit % 3)) + bit * 1.3;
+    const size = (3 + (bit % 3) * 2) * Math.max(0.6, tall / 320);
+    ctx.fillRect(
+      foot.middle + Math.cos(round) * wide * (0.45 + (bit % 4) * 0.22),
+      horizon - (0.25 + 0.75 * Math.abs(Math.sin(round * 0.7 + bit))) * high * 1.9,
+      size * 1.5,
+      size,
+    );
+  }
+}
+
+/**
  * Paints the windshield view.
  * @param {CanvasRenderingContext2D} ctx
  * @param {import('./rules.js').GameState} state
@@ -207,26 +324,8 @@ export function drawWindshield(ctx, state, day) {
   const seconds = performance.now() / 1000;
   drawSkyAndGround(ctx, state, seconds, horizon);
 
-  // The tornado. How far left or right it sits follows its direction from
-  // the car, its size follows how near it is, and its shape its strength.
   const { storm } = state;
-  if (storm.tornado > 0) {
-    const x = acrossOf(ctx, cameraOffFunnel(state));
-    const miles = milesToFunnel(state);
-    // Twice as near looks twice as tall, up to filling the sky.
-    const tall = Math.min(horizon * 1.1, (horizon * 1.6) / Math.max(miles, 0.5)) * (0.4 + 0.6 * storm.tornado);
-    const top = horizon - tall;
-    const shape = shapes[Math.min(shapes.length - 1, Math.floor(storm.strength / 2))];
-    ctx.beginPath();
-    ctx.moveTo(x - tall * shape.top, top);
-    ctx.lineTo(x + tall * shape.top, top);
-    ctx.lineTo(x + tall * shape.foot, horizon);
-    ctx.lineTo(x - tall * shape.foot, horizon);
-    ctx.closePath();
-    ctx.fillStyle = '#1b2026';
-    ctx.fill();
-    label(ctx, shape.fileName, x + tall * (shape.top + 0.02), top);
-  }
+  drawTornado(ctx, state, seconds, horizon);
 
   // The trees and poles along the horizon stand in front of the tornado.
   drawTreeLine(ctx, state, day, seconds, horizon);

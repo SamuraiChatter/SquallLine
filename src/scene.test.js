@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { skyDarkness, treeLean } from './scene.js';
+import { funnelHalfWidth, funnelReach, skyDarkness, tornadoShape, treeLean } from './scene.js';
 
 /**
  * A tree's lean at every tenth of a second for a minute.
@@ -62,4 +62,54 @@ test('a tree bends no further in a wind past the strongest it can stand', () => 
 
 test('trees do not all sway together', () => {
   assert.notEqual(treeLean(0, 1, 2, 1), treeLean(0, 1, 2, 2));
+});
+
+test('EF0 and EF1 are a rope, EF2 and EF3 a cone, EF4 and EF5 a wedge', () => {
+  assert.deepEqual([0, 1, 2, 3, 4, 5].map((strength) => tornadoShape(strength).name), ['rope', 'rope', 'cone', 'cone', 'wedge', 'wedge']);
+});
+
+test('a rope is thin all the way down, and a wedge is wide even at the ground', () => {
+  const widest = (/** @type {number} */ strength) => Math.max(...[0, 0.25, 0.5, 0.75, 1].map((down) => funnelHalfWidth(strength, down, 1)));
+  assert.ok(widest(0) < 0.1);
+  assert.ok(funnelHalfWidth(2, 0, 1) > widest(0) * 2);
+  assert.ok(funnelHalfWidth(4, 1, 1) > funnelHalfWidth(2, 1, 1) * 3);
+});
+
+test('every tornado is widest at the cloud and narrows toward the ground', () => {
+  for (const strength of [0, 2, 4]) {
+    const widths = [0, 0.25, 0.5, 0.75, 1].map((down) => funnelHalfWidth(strength, down, 1));
+    for (let i = 1; i < widths.length; i++) assert.ok(widths[i] < widths[i - 1], `EF${strength} at ${i}`);
+    assert.ok(widths[4] > 0, 'it has no foot');
+  }
+});
+
+test('with no hook, and through a false alarm, there is no funnel', () => {
+  assert.equal(funnelReach({ tornado: 0, tornadoHook: 0 }, 0.85), 0);
+  // A hook still growing, short of where the funnel starts down.
+  assert.equal(funnelReach({ tornado: 0, tornadoHook: 0.8 }, 0.85), 0);
+});
+
+test('a forming funnel reaches further down as the hook finishes growing, and stays off the ground', () => {
+  const early = funnelReach({ tornado: 0, tornadoHook: 0.9 }, 0.85);
+  const late = funnelReach({ tornado: 0, tornadoHook: 0.99 }, 0.85);
+  assert.ok(early > 0);
+  assert.ok(late > early);
+  assert.ok(late < 1);
+});
+
+test('a tornado on the ground reaches all the way down', () => {
+  assert.equal(funnelReach({ tornado: 1, tornadoHook: 1 }, 0.85), 1);
+  assert.equal(funnelReach({ tornado: 0.2, tornadoHook: 1 }, 0.85), 1);
+});
+
+test('a funnel still in the air comes to a point', () => {
+  assert.equal(funnelHalfWidth(2, 1, 0), 0);
+  assert.ok(funnelHalfWidth(2, 0, 0) > 0);
+});
+
+test('a dying tornado thins out but is still there', () => {
+  const full = funnelHalfWidth(2, 0.5, 1);
+  const dying = funnelHalfWidth(2, 0.5, 0.1);
+  assert.ok(dying < full * 0.5);
+  assert.ok(dying > 0);
 });
