@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildNetwork } from './roads.js';
-import { anchorWait, windMph, beginChase, buy, dangerRingMiles, dayTuning, freePlay, insideTornado, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, readSave, resume, runFinished, saveOf, step, strongest, toggleAnchor, toggleFilming, tornadoInFrame, whyNotBuy, windDamagePerSecond } from './rules.js';
+import { anchorWait, windMph, beginChase, buy, dangerRingMiles, dayTuning, freePlay, insideTornado, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, readSave, resume, runFinished, saveOf, spotterReport, spotterSees, spotters, step, strongest, toggleAnchor, toggleFilming, tornadoInFrame, whyNotBuy, windDamagePerSecond } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
@@ -16,6 +16,7 @@ const tuning = {
   anchor: { downSeconds: 2, upSeconds: 1 },
   wind: { mphAtTornado: [100, 120, 140, 160, 180, 200], reachMiles: 10, bonusPerMph: 2 },
   radar: { sweepSeconds: 4 },
+  spotters: { everySeconds: 3, offMiles: 1, ringSeconds: 5, wordsSeconds: 2, funnelCloudHook: 0.85 },
 };
 
 // Two roads that cross in the middle of the territory: one from 30 miles west
@@ -982,4 +983,121 @@ test('each day starts with the beam pointing north again', () => {
   state = nextDay(nextDay(state, runTuning, roads), runTuning, roads);
   assert.equal(state.day, 2);
   assert.equal(state.beam, 0);
+});
+
+// Spotter reports. The storm of stormTuning grows its hook from 5 seconds
+// in, has it half grown at 7.5, touches down at 10 and dies at 15.
+
+const towns = [
+  { name: 'Faraway', x: -25, y: 15 },
+  { name: 'Noble', x: 10.4, y: -2.6 },
+];
+
+/**
+ * The game after so many seconds of watching the storm with the spotters
+ * calling in.
+ * @param {number} seconds
+ * @param {typeof stormTuning} [withTuning]
+ * @param {() => number} [random]
+ */
+function watched(seconds, withTuning = stormTuning, random = () => 0.5) {
+  let state = newGame(withTuning, roads);
+  for (let i = 0; i < seconds * 4; i++) {
+    state = spotters(step(state, still, 0.25, withTuning, roads), 0.25, withTuning, towns, random);
+  }
+  return state;
+}
+
+/** @param {import('./rules.js').GameState} state */
+const said = (state) => state.reports.map((report) => report.words.replace(/^Spotter: /, '').replace(/ (at|\d+ mi) .*$/, ''));
+
+test('a spotter says what the hook has come to', () => {
+  const storm = newGame(stormTuning, roads).storm;
+  assert.equal(spotterSees({ ...storm, hook: 0 }, stormTuning), '');
+  assert.equal(spotterSees({ ...storm, hook: 0.49 }, stormTuning), '');
+  assert.equal(spotterSees({ ...storm, hook: 0.5 }, stormTuning), 'rotating wall cloud');
+  assert.equal(spotterSees({ ...storm, hook: 0.84 }, stormTuning), 'rotating wall cloud');
+  assert.equal(spotterSees({ ...storm, hook: 0.85 }, stormTuning), 'funnel cloud');
+  assert.equal(spotterSees({ ...storm, hook: 1 }, stormTuning), 'funnel cloud');
+  assert.equal(spotterSees({ ...storm, hook: 1, tornado: 0.4 }, stormTuning), 'TORNADO on the ground');
+});
+
+test('no reports come while the hook is less than half grown', () => {
+  assert.deepEqual(watched(7.25).reports, []);
+});
+
+test('the first report comes as soon as the hook is half grown', () => {
+  assert.deepEqual(said(watched(7.5)), ['rotating wall cloud']);
+});
+
+test('reports keep coming, one every so many seconds', () => {
+  assert.equal(watched(10.25).reports.length, 1);
+  assert.equal(watched(10.5).reports.length, 2);
+  // By the third, the first one's ring has gone.
+  assert.equal(watched(13.25).reports.at(-1)?.age, 2.75);
+  assert.equal(watched(13.5).reports.at(-1)?.age, 0);
+});
+
+test('with a tornado on the ground, a report says so within the time between reports', () => {
+  // Down at 10 seconds, and reports are 3 seconds apart.
+  assert.equal(said(watched(13)).at(-1), 'TORNADO on the ground');
+});
+
+test('what the reports say follows the storm', () => {
+  const often = { ...stormTuning, spotters: { ...stormTuning.spotters, everySeconds: 1 } };
+  assert.deepEqual(said(watched(10.5, often)), ['rotating wall cloud', 'rotating wall cloud', 'funnel cloud', 'TORNADO on the ground']);
+});
+
+test('a report names the nearest place, with the distance and direction to its ring', () => {
+  // The first random number is how far off the report is, as a share of the
+  // most it can be. The second is which way, as a share of a turn from north.
+  const storm = { ...newGame(stormTuning, roads).storm, hook: 1, funnel: { x: 7.4, y: -2.6 } };
+  const numbers = [1, 0.25];
+  const report = spotterReport(storm, towns, () => /** @type {number} */ (numbers.shift()), stormTuning);
+  // A mile east of the funnel, which is two miles west of Noble.
+  assert.ok(Math.abs(report.x - 8.4) < 1e-9 && Math.abs(report.y - -2.6) < 1e-9);
+  assert.equal(report.words, 'Spotter: funnel cloud 2 mi W of Noble');
+});
+
+test('a report right at a place says so', () => {
+  const storm = { ...newGame(stormTuning, roads).storm, hook: 0.6, funnel: { x: 10.4, y: -2.3 } };
+  assert.equal(spotterReport(storm, towns, () => 0, stormTuning).words, 'Spotter: rotating wall cloud at Noble');
+});
+
+test('a report on a map with no places still says what the spotter sees', () => {
+  const storm = { ...newGame(stormTuning, roads).storm, hook: 0.6 };
+  assert.equal(spotterReport(storm, [], () => 0, stormTuning).words, 'Spotter: rotating wall cloud');
+});
+
+test("a report's ring is never further from the funnel than the tuning allows", () => {
+  const storm = { ...newGame(stormTuning, roads).storm, hook: 1 };
+  for (let i = 0; i < 200; i++) {
+    const report = spotterReport(storm, towns, Math.random, stormTuning);
+    assert.ok(Math.hypot(report.x - storm.funnel.x, report.y - storm.funnel.y) <= stormTuning.spotters.offMiles + 1e-9);
+  }
+});
+
+test("a report's ring ages and is gone after its time", () => {
+  // One report at 7.5 seconds, and rings last 5.
+  assert.equal(watched(8.5).reports[0].age, 1);
+  const later = watched(12.75);
+  assert.ok(later.reports.every((report) => report.age < 5));
+  assert.equal(later.reports.length, 1);
+});
+
+test('no reports come during the briefing or once the day is over', () => {
+  const day = dayTuning(runTuning, 1);
+  const briefing = { ...newRun(runTuning, roads), storm: { ...newRun(runTuning, roads).storm, hook: 1 } };
+  assert.deepEqual(spotters(briefing, 1, day, towns).reports, []);
+  const over = headHome(watched(7.5), stormTuning);
+  assert.equal(spotters(over, 5, stormTuning, towns), over);
+});
+
+test('each day starts with no reports', () => {
+  let state = beginChase(newRun(runTuning, roads));
+  const day = dayTuning(runTuning, 1);
+  for (let i = 0; i < 200 && !state.dayOver; i++) state = spotters(step(state, still, 0.25, day, roads), 0.25, day, towns);
+  assert.ok(state.reports.length > 0);
+  state = nextDay(nextDay(state, runTuning, roads), runTuning, roads);
+  assert.deepEqual(state.reports, []);
 });

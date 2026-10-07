@@ -72,6 +72,16 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {number} beam How far the radar's beam has turned since the
  *   chase began, in turns: 2.25 is two and a quarter turns. It starts out
  *   pointing north and turns clockwise.
+ * @property {Report[]} reports What the spotters have called in and is still
+ *   on the map, oldest first.
+ * @property {number} reportWait How many seconds until the spotters call in
+ *   again. Nothing while there is nothing for them to see.
+ */
+
+/**
+ * A spotter's report: where the spotter puts it, what they said, and how
+ * many seconds ago.
+ * @typedef {{ x: number, y: number, words: string, age: number }} Report
  */
 
 /**
@@ -113,7 +123,7 @@ import { drive, nearestSpot, placeOf } from './roads.js';
 /**
  * The numbers a whole run plays by: what the days share, each day's own, and
  * the parts the garage sells.
- * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail' | 'anchor' | 'wind'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, radar: Pick<TuningFile['radar'], 'sweepSeconds'>, days: Day[], parts: Part[] }} RunTuning
+ * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail' | 'anchor' | 'wind' | 'spotters'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, radar: Pick<TuningFile['radar'], 'sweepSeconds'>, days: Day[], parts: Part[] }} RunTuning
  */
 
 /**
@@ -391,6 +401,8 @@ export function newGame(tuning, roads) {
     topWind: 0,
     scienceBonus: 0,
     beam: 0,
+    reports: [],
+    reportWait: 0,
   };
 }
 
@@ -567,6 +579,76 @@ export function step(state, steering, dt, tuning, roads) {
   // whatever the tuning file says.
   const beam = state.beam + dt / Math.max(0.1, tuning.radar.sweepSeconds);
   return battered(driveOrFilm({ ...state, storm, beam }, steering, dt, tuning, roads), dt, tuning);
+}
+
+/**
+ * What a spotter watching the storm would call in. Nothing until the hook is
+ * half grown.
+ * @param {Storm} storm
+ * @param {Pick<Tuning, 'spotters'>} tuning
+ * @returns {'' | 'rotating wall cloud' | 'funnel cloud' | 'TORNADO on the ground'}
+ */
+export function spotterSees(storm, tuning) {
+  if (storm.tornado > 0) return 'TORNADO on the ground';
+  if (storm.hook < 0.5) return '';
+  return storm.hook >= tuning.spotters.funnelCloudHook ? 'funnel cloud' : 'rotating wall cloud';
+}
+
+// The eight points of the compass, clockwise from north.
+const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+
+/**
+ * A spotter's report on a storm they can see something in. The spot is near
+ * where the hook curls, not right on it: a spotter is looking from a
+ * distance. It is named from the nearest place on the map.
+ * @param {Storm} storm
+ * @param {{ name: string, x: number, y: number }[]} places
+ * @param {() => number} random Gives a number from 0 to 1 each time. Asked
+ *   twice: for how far off the spot is, and for which way.
+ * @param {Pick<Tuning, 'spotters'>} tuning
+ * @returns {{ x: number, y: number, words: string }}
+ */
+export function spotterReport(storm, places, random, tuning) {
+  const off = random() * tuning.spotters.offMiles;
+  const way = random() * Math.PI * 2;
+  const x = storm.funnel.x + off * Math.sin(way);
+  const y = storm.funnel.y + off * Math.cos(way);
+  const sees = `Spotter: ${spotterSees(storm, tuning)}`;
+  if (places.length === 0) return { x, y, words: sees };
+
+  const place = places.reduce((near, other) => (Math.hypot(other.x - x, other.y - y) < Math.hypot(near.x - x, near.y - y) ? other : near));
+  const miles = Math.round(Math.hypot(x - place.x, y - place.y));
+  // Which way the spot is from the place, to the nearest compass point.
+  const turns = (Math.atan2(x - place.x, y - place.y) / (Math.PI * 2) + 1) % 1;
+  const where = miles === 0 ? `at ${place.name}` : `${miles} mi ${compass[Math.round(turns * 8) % 8]} of ${place.name}`;
+  return { x, y, words: `${sees} ${where}` };
+}
+
+/**
+ * The spotters' part of a moment. While the hook is at least half grown they
+ * call in a report every so often, the first one at once. Each report stays
+ * on the map for a while, then goes.
+ * @param {GameState} state
+ * @param {number} dt Seconds since the last step.
+ * @param {Tuning} tuning
+ * @param {{ name: string, x: number, y: number }[]} places The places on the
+ *   map, for naming where a report is.
+ * @param {() => number} [random] Gives a number from 0 to 1 each time.
+ * @returns {GameState}
+ */
+export function spotters(state, dt, tuning, places, random = Math.random) {
+  if (state.briefing || state.dayOver) return state;
+  const { everySeconds, ringSeconds } = tuning.spotters;
+  const reports = state.reports.map((report) => ({ ...report, age: report.age + dt })).filter((report) => report.age < ringSeconds);
+  if (!spotterSees(state.storm, tuning)) return { ...state, reports, reportWait: 0 };
+
+  let reportWait = state.reportWait - dt;
+  if (reportWait <= 0) {
+    reports.push({ ...spotterReport(state.storm, places, random, tuning), age: 0 });
+    // Never quicker than two a second, whatever the tuning file says.
+    reportWait = Math.max(0.5, everySeconds);
+  }
+  return { ...state, reports, reportWait };
 }
 
 /**
