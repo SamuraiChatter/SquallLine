@@ -29,6 +29,15 @@ const rotation = {
   y: -hookEndMiles * Math.sin((hookEndDegrees * Math.PI) / 180),
 };
 
+/**
+ * The middle of a storm's rotation: the spot its hook winds round.
+ * @param {Storm} storm
+ * @returns {Point}
+ */
+export function rotationOf(storm) {
+  return { x: storm.funnel.x + rotation.x, y: storm.funnel.y + rotation.y };
+}
+
 // The hook is worked out as this many short steps.
 const hookSteps = 60;
 // Each step's spot, in miles east and north of the funnel.

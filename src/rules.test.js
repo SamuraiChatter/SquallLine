@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildNetwork } from './roads.js';
-import { anchorWait, windMph, beginChase, buy, dangerRingMiles, dayTuning, freePlay, insideTornado, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, readSave, resume, runFinished, saveOf, spotterReport, spotterSees, spotters, step, strongest, toggleAnchor, toggleFilming, tornadoInFrame, whyNotBuy, windDamagePerSecond } from './rules.js';
+import { anchorWait, windMph, beginChase, buy, dangerRingMiles, dayTuning, freePlay, insideTornado, hailCore, headHome, inHailCore, newGame, newRun, newSave, nextDay, payPerSecond, radarMarks, readSave, resume, runFinished, saveOf, spotterReport, spotterSees, spotters, step, strongest, toggleAnchor, toggleFilming, tornadoInFrame, whyNotBuy, windDamagePerSecond } from './rules.js';
 
 // The tests bring their own numbers, so retuning the game never breaks them.
 const tuning = {
@@ -15,7 +15,7 @@ const tuning = {
   hail: { coreMilesLong: 2, coreMilesWide: 1, damagePerSecond: 0.2 },
   anchor: { downSeconds: 2, upSeconds: 1 },
   wind: { mphAtTornado: [100, 120, 140, 160, 180, 200], reachMiles: 10, bonusPerMph: 2 },
-  radar: { sweepSeconds: 4 },
+  radar: { sweepSeconds: 4, vortexHook: 0.85 },
   spotters: { everySeconds: 3, offMiles: 1, ringSeconds: 5, wordsSeconds: 2, funnelCloudHook: 0.85 },
 };
 
@@ -392,6 +392,7 @@ const runTuning = {
     { id: 'radar', price: 800, dashRadar: true },
     { id: 'gauge', price: 900, windGauge: true },
     { id: 'turret', price: 1000, viewfinderTimes: 2 },
+    { id: 'phased', price: 1100, sweepTimes: 4, radarMarks: true },
   ],
   days: [0, 1, 2].map((strength) => ({
     path: [{ x: 20, y: 20 }, { x: 30, y: 20 }],
@@ -959,7 +960,7 @@ test('the radar beam starts pointing north and turns once in its turn time', () 
 });
 
 test('a beam with half the turn time turns twice as fast', () => {
-  const fast = { ...stormTuning, radar: { sweepSeconds: stormTuning.radar.sweepSeconds / 2 } };
+  const fast = { ...stormTuning, radar: { ...stormTuning.radar, sweepSeconds: stormTuning.radar.sweepSeconds / 2 } };
   const slow = step(newGame(stormTuning, roads), still, 0.25, stormTuning, roads);
   const quick = step(newGame(fast, roads), still, 0.25, fast, roads);
   assert.ok(Math.abs(quick.beam - 2 * slow.beam) < 1e-9);
@@ -1195,4 +1196,86 @@ test("a day's false alarms are part of the numbers the day plays by, and a day w
   const withAlarms = { ...runTuning, days };
   assert.deepEqual(dayTuning(withAlarms, 1).storm.falseAlarms, [{ start: 0.05, end: 0.1 }]);
   assert.equal(dayTuning(withAlarms, 2).storm.falseAlarms, undefined);
+});
+
+// The phased array radar.
+
+const plainRadar = dayTuning(runTuning, 1);
+const phasedRadar = dayTuning(runTuning, 1, ['phased']);
+/** @param {Partial<import('./rules.js').Storm>} more */
+const stormWith = (more) => ({ ...newGame(stormTuning, roads).storm, ...more });
+// A hook that belongs to a tornado on its way, and one that is a false alarm.
+const realHook = (/** @type {number} */ hook) => stormWith({ hook, tornadoHook: hook });
+const falseHook = (/** @type {number} */ hook) => stormWith({ hook, tornadoHook: 0 });
+
+test('without the phased array radar the beam turns at its plain speed and nothing is ever marked', () => {
+  assert.equal(plainRadar.radar.sweepSeconds, tuning.radar.sweepSeconds);
+  for (const storm of [realHook(0), realHook(0.6), realHook(1), stormWith({ hook: 1, tornadoHook: 1, tornado: 1 }), falseHook(1)]) {
+    assert.deepEqual(radarMarks(storm, plainRadar), { rotation: false, vortex: false });
+  }
+});
+
+test('with the phased array radar the beam turns faster by the number on the part', () => {
+  assert.equal(phasedRadar.radar.sweepSeconds, tuning.radar.sweepSeconds / 4);
+  const still = { x: 0, y: 0 };
+  const plain = step(beginChase(newRun(runTuning, roads)), still, 0.25, plainRadar, roads);
+  const phased = step(beginChase(newRun(runTuning, roads)), still, 0.25, phasedRadar, roads);
+  assert.ok(Math.abs(phased.beam - 4 * plain.beam) < 1e-9);
+});
+
+test('with the part, the rotation is marked once a hook is half grown, and no longer when it fades', () => {
+  assert.equal(radarMarks(realHook(0), phasedRadar).rotation, false);
+  assert.equal(radarMarks(realHook(0.49), phasedRadar).rotation, false);
+  assert.equal(radarMarks(realHook(0.5), phasedRadar).rotation, true);
+  assert.equal(radarMarks(realHook(1), phasedRadar).rotation, true);
+  assert.equal(radarMarks(falseHook(0.5), phasedRadar).rotation, true);
+  assert.equal(radarMarks(falseHook(1), phasedRadar).rotation, true);
+  assert.equal(radarMarks(falseHook(0.3), phasedRadar).rotation, false);
+});
+
+test('with the part, a real tornado is marked shortly before it touches down and while it is on the ground', () => {
+  assert.equal(radarMarks(realHook(0.5), phasedRadar).vortex, false);
+  assert.equal(radarMarks(realHook(0.84), phasedRadar).vortex, false);
+  assert.equal(radarMarks(realHook(0.85), phasedRadar).vortex, true);
+  assert.equal(radarMarks(realHook(1), phasedRadar).vortex, true);
+  assert.equal(radarMarks(stormWith({ hook: 1, tornadoHook: 1, tornado: 1 }), phasedRadar).vortex, true);
+  assert.equal(radarMarks(stormWith({ hook: 1, tornadoHook: 1, tornado: 0.2 }), phasedRadar).vortex, true);
+});
+
+test('with the part, a false alarm is marked as rotation but never as a tornado', () => {
+  for (const hook of [0.5, 0.85, 0.99, 1]) {
+    assert.deepEqual(radarMarks(falseHook(hook), phasedRadar), { rotation: true, vortex: false });
+  }
+});
+
+test('the storm knows how much of its hook belongs to a real tornado', () => {
+  // A false alarm from 6 to 10 seconds, then a tornado that touches down at
+  // 14, with two seconds of hook before it.
+  const both = { ...alarmTuning, storm: { ...alarmTuning.storm, tornadoes: [{ start: 0.7, end: 0.9 }] } };
+  assert.deepEqual([stormAfter(8, both).hook, stormAfter(8, both).tornadoHook], [1, 0]);
+  assert.ok(Math.abs(stormAfter(13, both).tornadoHook - 0.5) < 1e-9);
+  assert.deepEqual([stormAfter(14, both).hook, stormAfter(14, both).tornadoHook], [1, 1]);
+  // With no false alarms the two are always the same.
+  for (let seconds = 0; seconds <= 14; seconds += 0.5) {
+    assert.equal(stormAfter(seconds).tornadoHook, stormAfter(seconds).hook);
+  }
+});
+
+test('through a whole false alarm and the tornado after it, only the tornado is ever marked as one', () => {
+  const both = { ...alarmTuning, storm: { ...alarmTuning.storm, tornadoes: [{ start: 0.7, end: 0.9 }] } };
+  const withPart = { ...both, radar: { ...both.radar, marks: true } };
+  for (let seconds = 0; seconds <= 12; seconds += 0.5) assert.equal(radarMarks(stormAfter(seconds, both), withPart).vortex, false, `${seconds}`);
+  assert.equal(radarMarks(stormAfter(8, both), withPart).rotation, true);
+  // The hook is 85% grown 0.3 seconds before touchdown.
+  assert.equal(radarMarks(stormAfter(13.5, both), withPart).vortex, false);
+  assert.equal(radarMarks(stormAfter(13.75, both), withPart).vortex, true);
+  assert.equal(radarMarks(stormAfter(16, both), withPart).vortex, true);
+});
+
+test('the phased array radar is bought once and kept in the save', () => {
+  const bought = buy(inGarage(2000), 'phased', runTuning);
+  assert.deepEqual(bought.parts, ['phased']);
+  assert.equal(bought.balance, 900);
+  assert.equal(buy(bought, 'phased', runTuning), bought);
+  assert.deepEqual(readSave(JSON.stringify(saveOf(bought, runTuning)), runTuning)?.parts, ['phased']);
 });

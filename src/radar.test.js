@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { beamPassed, bearingOf, colourOf, coverOf, dbzAt, hailDbz, hookSpot } from './radar.js';
+import { beamPassed, bearingOf, colourOf, coverOf, dbzAt, hailDbz, hookSpot, rotationOf } from './radar.js';
 import { funnelOf, inHailCore } from './rules.js';
 
 const day = /** @type {import('./rules.js').Tuning} */ (/** @type {unknown} */ ({ hail: { coreMilesLong: 1.5, coreMilesWide: 1 } }));
@@ -12,7 +12,7 @@ const day = /** @type {import('./rules.js').Tuning} */ (/** @type {unknown} */ (
  */
 function stormAt(more = {}) {
   const middle = { x: 4, y: -7 };
-  return { miles: 0, ...middle, hook: 0, tornado: 0, funnel: funnelOf(middle), strength: 0, spent: false, ...more };
+  return { miles: 0, ...middle, hook: 0, tornadoHook: 0, tornado: 0, funnel: funnelOf(middle), strength: 0, spent: false, ...more };
 }
 
 /** @param {import('./rules.js').Storm} storm */
@@ -120,4 +120,15 @@ test('a beam that has turned all the way round has passed everything', () => {
 
 test('a beam that has not turned has passed nothing', () => {
   assert.equal(beamPassed(0.25, 0.25, 0), false);
+});
+
+test("the middle of the storm's rotation is inside the hook's curl, close to the funnel", () => {
+  const storm = stormAt();
+  const middle = rotationOf(storm);
+  assert.ok(Math.abs(Math.hypot(middle.x - storm.funnel.x, middle.y - storm.funnel.y) - 0.9) < 1e-9);
+  // Every spot on the hook is further from the middle than its tip is.
+  for (let tenth = 0; tenth < 10; tenth++) {
+    const spot = hookSpot(storm, tenth / 10);
+    assert.ok(Math.hypot(spot.x - middle.x, spot.y - middle.y) > 0.9);
+  }
 });

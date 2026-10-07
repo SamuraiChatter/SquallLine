@@ -56,6 +56,12 @@ export const tuning = {
     // changes where the beam passes over it, so a slower beam shows an older
     // storm. The hail, the wind and the tornado marker are never late.
     sweepSeconds: 5,
+
+    // For a vehicle with the phased array radar: how far a real tornado's
+    // hook has grown when the radar marks it with a red triangle. 0.85 is
+    // 85% grown, a few seconds before it touches down. Smaller gives the
+    // player more warning. A false alarm is never marked.
+    vortexHook: 0.85,
   },
 
   // How many miles the territory is from west to east, and from south to
@@ -335,6 +341,11 @@ export const tuning = {
   // windGauge: with this, the day's top wind is recorded and the summary
   //   pays a science bonus for it.
   // viewfinderTimes: how wide the viewfinder box is.
+  // sweepTimes: how much faster the radar's beam turns, so the radar picture
+  //   is less out of date.
+  // radarMarks: with this, the radar marks a storm's rotation with a yellow
+  //   circle, false alarms too, and a real tornado that is about to touch
+  //   down or is on the ground with a red triangle.
   parts: [
     {
       id: 'lexan',
@@ -436,6 +447,17 @@ export const tuning = {
       picture: 'art/part-turret.png',
       at: { x: 0.8, y: 0.08 },
       viewfinderTimes: 1.6,
+    },
+    {
+      id: 'phased',
+      name: 'Phased array radar',
+      price: 7000,
+      does: 'A radar five times faster, which marks rotation and tornadoes.',
+      needs: '',
+      picture: 'art/part-phased.png',
+      at: { x: 0.15, y: 0.62 },
+      sweepTimes: 5,
+      radarMarks: true,
     },
   ],
 

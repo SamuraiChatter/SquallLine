@@ -17,6 +17,9 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {number} y
  * @property {number} hook How far the hook has grown and tightened: 0 is no
  *   hook, 1 is a full hook with a tornado due or on the ground.
+ * @property {number} tornadoHook How much of that hook belongs to a real
+ *   tornado, coming or on the ground. The same as hook, except in a false
+ *   alarm, where it is 0.
  * @property {number} tornado How big the tornado is: 0 is no tornado, 1 is
  *   full size. There is only ever one.
  * @property {Point} funnel Where the hook curls and the tornado touches
@@ -120,12 +123,14 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {number} [viewfinderTimes]
  * @property {boolean} [dashRadar]
  * @property {boolean} [windGauge]
+ * @property {number} [sweepTimes]
+ * @property {boolean} [radarMarks]
  */
 
 /**
  * The numbers a whole run plays by: what the days share, each day's own, and
  * the parts the garage sells.
- * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail' | 'anchor' | 'wind' | 'spotters'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, radar: Pick<TuningFile['radar'], 'sweepSeconds'>, days: Day[], parts: Part[] }} RunTuning
+ * @typedef {Pick<TuningFile, 'carMilesPerSecond' | 'carStart' | 'startingBalance' | 'storm' | 'danger' | 'debris' | 'hail' | 'anchor' | 'wind' | 'spotters'> & { camera: Pick<TuningFile['camera'], 'viewfinderDegrees' | 'panDegreesPerSecond'>, radar: Pick<TuningFile['radar'], 'sweepSeconds' | 'vortexHook'>, days: Day[], parts: Part[] }} RunTuning
  */
 
 /**
@@ -144,8 +149,10 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @property {RunTuning['wind'] & { gauge?: boolean }} wind With the roof
  *   wind gauge, gauge is true.
  * @property {boolean} [dashRadar] True with the dash radar.
+ * @property {RunTuning['radar'] & { marks?: boolean }} radar With the phased
+ *   array radar, marks is true: the radar marks rotation and tornadoes.
  *
- * @typedef {Omit<RunTuning, 'storm' | 'danger' | 'anchor' | 'wind' | 'days' | 'parts' | 'startingBalance'> & DayNumbers} Tuning
+ * @typedef {Omit<RunTuning, 'storm' | 'danger' | 'anchor' | 'wind' | 'radar' | 'days' | 'parts' | 'startingBalance'> & DayNumbers} Tuning
  */
 
 /** @typedef {import('./roads.js').RoadNetwork} RoadNetwork */
@@ -156,14 +163,14 @@ import { drive, nearestSpot, placeOf } from './roads.js';
  * @param {T} tuning
  * @param {number} day Which day, counting from 1.
  * @param {string[]} [owned] The ids of the parts on the vehicle.
- * @returns {Omit<T, 'danger' | 'anchor' | 'wind'> & Tuning}
+ * @returns {Omit<T, 'danger' | 'anchor' | 'wind' | 'radar'> & Tuning}
  */
 export function dayTuning(tuning, day, owned = []) {
   const { path, tornadoes, falseAlarms, footage } = tuning.days[day - 1];
   const parts = tuning.parts.filter((part) => owned.includes(part.id));
   /**
    * What the parts multiply one of the game's numbers by, between them.
-   * @param {'speedTimes' | 'payTimes' | 'hailDamageTimes' | 'debrisDamageTimes' | 'dangerRingTimes' | 'viewfinderTimes'} effect
+   * @param {'speedTimes' | 'payTimes' | 'hailDamageTimes' | 'debrisDamageTimes' | 'dangerRingTimes' | 'viewfinderTimes' | 'sweepTimes'} effect
    */
   const times = (effect) => parts.reduce((all, part) => all * (part[effect] ?? 1), 1);
   return {
@@ -171,6 +178,7 @@ export function dayTuning(tuning, day, owned = []) {
     carMilesPerSecond: tuning.carMilesPerSecond * times('speedTimes'),
     camera: { ...tuning.camera, viewfinderDegrees: tuning.camera.viewfinderDegrees * times('viewfinderTimes') },
     dashRadar: parts.some((part) => part.dashRadar),
+    radar: { ...tuning.radar, sweepSeconds: tuning.radar.sweepSeconds / times('sweepTimes'), marks: parts.some((part) => part.radarMarks) },
     wind: { ...tuning.wind, gauge: parts.some((part) => part.windGauge) },
     storm: { ...tuning.storm, path, tornadoes, falseAlarms },
     footage: { ...footage, payAtEdge: footage.payAtEdge * times('payTimes'), payAtTornado: footage.payAtTornado * times('payTimes') },
@@ -584,6 +592,23 @@ export function step(state, steering, dt, tuning, roads) {
 }
 
 /**
+ * What the phased array radar marks on a storm. Rotation is any hook at
+ * least half grown, a false alarm's too. A vortex is a real tornado: shortly
+ * before it touches down, and while it is on the ground. Without the part
+ * the radar marks nothing.
+ * @param {Storm} storm
+ * @param {Pick<Tuning, 'radar'>} tuning
+ * @returns {{ rotation: boolean, vortex: boolean }}
+ */
+export function radarMarks(storm, tuning) {
+  const marks = tuning.radar.marks === true;
+  return {
+    rotation: marks && storm.hook >= 0.5,
+    vortex: marks && (storm.tornado > 0 || storm.tornadoHook >= tuning.radar.vortexHook),
+  };
+}
+
+/**
  * What a spotter watching the storm would call in. Nothing until the hook is
  * half grown.
  * @param {Storm} storm
@@ -837,6 +862,8 @@ function stormAt(miles, tuning) {
   } else if (next) {
     hook = Math.max(0, 1 - (next.start - along) / tuning.hookLead);
   }
+  // So far the hook is all a real tornado's.
+  const tornadoHook = hook;
   // A false alarm's hook grows over the same lead as a real one's, holds
   // from its start to its end, then fades over the same lead again.
   const falseAlarms = tuning.falseAlarms ?? [];
@@ -851,5 +878,5 @@ function stormAt(miles, tuning) {
   const fading = falseAlarms.some(({ end }) => along < Math.min(1, end + tuning.hookLead));
   const spent = last !== undefined && along >= last.end && !fading;
   const strength = (onGround ?? next)?.strength ?? 0;
-  return { miles, x, y, hook, tornado, funnel: funnelOf({ x, y }), strength, spent };
+  return { miles, x, y, hook, tornadoHook, tornado, funnel: funnelOf({ x, y }), strength, spent };
 }
