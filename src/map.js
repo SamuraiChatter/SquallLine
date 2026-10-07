@@ -23,6 +23,8 @@ const tiers = [['motorway'], ['trunk', 'primary'], ['secondary'], ['tertiary', '
  * @property {import('./roads.js').RoadNetwork} roads The roads the car
  *   drives on: every road that is drawn, with each freeway as one line and
  *   each interchange as one junction.
+ * @property {{ x: number, y: number }[]} interchanges The places where the
+ *   car can get on or off a freeway.
  */
 
 /**
@@ -99,5 +101,6 @@ export async function loadMap() {
     ...toMiles(place.lon, place.lat),
   }));
 
-  return { squares, counties, places, roads: buildNetwork(drivingLines(roads)) };
+  const driving = drivingLines(roads);
+  return { squares, counties, places, roads: buildNetwork(driving.lines), interchanges: driving.interchanges };
 }

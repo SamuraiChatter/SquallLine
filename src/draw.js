@@ -37,6 +37,9 @@ export function draw(ctx, state, wholeTerritory, map, day) {
   ctx.translate(-middle.x, -middle.y);
 
   drawMap(ctx, map, wholeTerritory, middle, pixelsPerMile);
+  // The whole territory has too many interchanges to mark: they would hide
+  // the freeways.
+  if (!wholeTerritory) drawInterchanges(ctx, map, pixelsPerMile);
 
   // The edge of the territory.
   ctx.lineWidth = 4 / pixelsPerMile;
@@ -292,6 +295,32 @@ export function drawMap(ctx, map, wholeTerritory, middle, pixelsPerMile) {
     ctx.fillText(place.name, x, y);
   }
   ctx.restore();
+}
+
+/**
+ * Paints a small diamond at each place the car can get on or off a freeway.
+ * A road that crosses a freeway with no diamond is a bridge.
+ * @param {CanvasRenderingContext2D} ctx Already set up to draw in miles.
+ * @param {import('./map.js').GameMap} map
+ * @param {number} pixelsPerMile
+ */
+function drawInterchanges(ctx, map, pixelsPerMile) {
+  // Half the diamond's width, in miles. It keeps its size on screen.
+  const size = 7 / pixelsPerMile;
+  ctx.beginPath();
+  for (const { x, y } of map.interchanges) {
+    ctx.moveTo(x, y + size);
+    ctx.lineTo(x + size, y);
+    ctx.lineTo(x, y - size);
+    ctx.lineTo(x - size, y);
+    ctx.closePath();
+  }
+  // Bright with a dark edge, so it still shows under the radar's rain.
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.lineWidth = 2.5 / pixelsPerMile;
+  ctx.strokeStyle = '#0b1118';
+  ctx.stroke();
 }
 
 // The radar's two pictures, reflectivity (the rain) and velocity (the wind):

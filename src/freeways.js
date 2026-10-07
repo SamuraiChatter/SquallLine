@@ -46,6 +46,8 @@ const besideMiles = 0.1;
 const straightMiles = 1;
 // Two freeways that cross are joined if a ramp comes this close to the place.
 const rampNearMiles = 0.3;
+// Junctions closer together than this many miles count as one interchange.
+const sameInterchangeMiles = 0.05;
 // How many miles across each square of the index below is.
 const squareMiles = 0.25;
 
@@ -233,12 +235,13 @@ function oneSideOf(freeways) {
  * is, one line for each freeway, no ramps, and a junction wherever a ramp
  * joined a freeway to another road.
  * @param {Road[]} roads
- * @returns {Point[][]} Each road as a list of points. Roads that share a
- *   point are joined there.
+ * @returns {{ lines: Point[][], interchanges: Point[] }} Each road as a list
+ *   of points: roads that share a point are joined there. And the places
+ *   where the car can get on or off a freeway.
  */
 export function drivingLines(roads) {
   const freeways = roads.filter((road) => road.class === 'motorway').map((road) => road.points);
-  if (!freeways.length) return roads.map((road) => road.points);
+  if (!freeways.length) return { lines: roads.map((road) => road.points), interchanges: [] };
   const onFreeway = new Set(freeways.flatMap((line) => line.map(keyOf)));
   const others = roads.filter((road) => road.class !== 'motorway' && road.class !== 'motorway_link').map((road) => road.points);
   // Ramps come in sets that hang together. A set that reaches no freeway
@@ -265,6 +268,9 @@ export function drivingLines(roads) {
     if (list) list.push({ i: step.i, along, point });
     else cuts.set(step.line, [{ i: step.i, along, point }]);
   };
+  // Every junction made between a freeway and another road or freeway.
+  /** @type {Point[]} */
+  const junctions = [];
   // Short new roads that join a point straight to a freeway.
   /** @type {Point[][]} */
   const joins = [];
@@ -284,6 +290,7 @@ export function drivingLines(roads) {
     const point = { x: onto.spot.x, y: onto.spot.y };
     cut(onto.step, onto.spot.along, point);
     joins.push([from, point]);
+    junctions.push(point);
   };
 
   // Most roads are miles from any freeway. Looking only at the ones with a
@@ -400,6 +407,7 @@ export function drivingLines(roads) {
       if (!bridge.joined) continue;
       cut(step, bridge.along, bridge.point);
       cut(bridge.over, nearestOn(bridge.over, bridge.point).along, bridge.point);
+      junctions.push(bridge.point);
     }
   }
 
@@ -416,6 +424,7 @@ export function drivingLines(roads) {
       if (!rampIndex.near(point, point, rampNearMiles).some((ramp) => nearestOn(ramp, point).miles < rampNearMiles)) continue;
       cut(step, along, point);
       cut(over, nearestOn(over, point).along, point);
+      junctions.push(point);
     }
   }
 
@@ -432,7 +441,28 @@ export function drivingLines(roads) {
     });
     return points;
   });
-  return [...withCuts, ...joins];
+  const lines = [...withCuts, ...joins];
+
+  // How many ways lead out of each junction. One with only two is where a
+  // freeway's end was carried on to the end of another: nowhere to turn.
+  /** @type {Map<number, Set<number>>} */
+  const waysOut = new Map(junctions.map((junction) => [keyOf(junction), new Set()]));
+  for (const line of lines) {
+    line.forEach((point, i) => {
+      const ways = waysOut.get(keyOf(point));
+      if (!ways) return;
+      for (const next of [line[i - 1], line[i + 1]]) if (next && keyOf(next) !== keyOf(point)) ways.add(keyOf(next));
+    });
+  }
+  // Junctions a few yards apart, such as the two a divided cross road makes,
+  // are one interchange.
+  /** @type {Point[]} */
+  const interchanges = [];
+  for (const junction of junctions) {
+    if (/** @type {Set<number>} */ (waysOut.get(keyOf(junction))).size < 3) continue;
+    if (!interchanges.some((other) => Math.hypot(other.x - junction.x, other.y - junction.y) < sameInterchangeMiles)) interchanges.push(junction);
+  }
+  return { lines, interchanges };
 }
 
 /**
