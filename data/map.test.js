@@ -59,7 +59,8 @@ const roads = map.roads
     class: road.class,
     points: road.points.map(([lon, lat]) => toMiles(lon, lat)),
   }));
-const network = buildNetwork(drivingLines(roads));
+const driving = drivingLines(roads);
+const network = buildNetwork(driving.lines);
 // The rural grid is the roads OpenStreetMap calls residential.
 const gridRoads = roads.filter((road) => road.class === 'residential');
 
@@ -210,6 +211,30 @@ test('Robinson Street meets Interstate 35 in Norman at one four-way junction', (
 
 test('Rock Creek Road crosses Interstate 35 in Norman on a bridge, with no junction', () => {
   assert.equal(waysNear({ x: 0.812, y: -0.146 }), 2);
+});
+
+/**
+ * How many interchanges are marked within so many miles of a place.
+ * @param {{ x: number, y: number }} place
+ * @param {number} miles
+ */
+const interchangesNear = (place, miles) =>
+  driving.interchanges.filter((/** @type {{ x: number, y: number }} */ at) => Math.hypot(at.x - place.x, at.y - place.y) < miles).length;
+
+test('Robinson Street at Interstate 35 is marked as one interchange', () => {
+  assert.equal(interchangesNear({ x: 0.813, y: -1.177 }, 0.2), 1);
+});
+
+test('Rock Creek Road, a bridge over Interstate 35, is not marked', () => {
+  assert.equal(interchangesNear({ x: 0.812, y: -0.146 }, 0.2), 0);
+});
+
+test('every interchange marked is a junction the car can turn at', () => {
+  for (const at of driving.interchanges) {
+    const point = nearestSpot(network, at).to;
+    assert.ok(Math.hypot(network.xs[point] - at.x, network.ys[point] - at.y) < 1e-9, `no point at ${at.x}, ${at.y}`);
+    assert.ok(network.ways[point].length >= 3, `no junction at ${at.x}, ${at.y}`);
+  }
 });
 
 test('no ramp off a freeway is left to drive on', () => {

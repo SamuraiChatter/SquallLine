@@ -44,7 +44,8 @@ const roads = [
   road('motorway_link', [0.01, -1.3], [0.3, -1.01]),
   road('motorway_link', [0.3, -0.99], [0.01, -0.7]),
 ];
-const network = buildNetwork(drivingLines(roads));
+const driving = drivingLines(roads);
+const network = buildNetwork(driving.lines);
 
 const north = { x: 0, y: 1 };
 const south = { x: 0, y: -1 };
@@ -141,7 +142,7 @@ test('a freeway that ends at ramps onto another carries on to it', () => {
 
 test('a ramp between two ordinary roads, which reaches no freeway, can still be driven', () => {
   const slip = buildNetwork(
-    drivingLines([...roads, road('secondary', [-3, 0], [-3, 1]), road('motorway_link', [-3, 1], [-2.5, 1.5], [-2, 2]), road('tertiary', [-3, 2], [-2, 2])]),
+    drivingLines([...roads, road('secondary', [-3, 0], [-3, 1]), road('motorway_link', [-3, 1], [-2.5, 1.5], [-2, 2]), road('tertiary', [-3, 2], [-2, 2])]).lines,
   );
   assert.ok(slip.xs.some((x, point) => x === -2.5 && slip.ys[point] === 1.5));
 });
@@ -149,13 +150,52 @@ test('a ramp between two ordinary roads, which reaches no freeway, can still be 
 test('where two lines of freeway run side by side, an interchange joins the cross road to both', () => {
   // A second line of freeway, with no other side of its own, which crosses
   // Main Street a twentieth of a mile east of the interstate.
-  const beside = buildNetwork(drivingLines([...roads, road('motorway', [-0.34, -0.3], [0.46, 0.3])]));
+  const beside = buildNetwork(drivingLines([...roads, road('motorway', [-0.34, -0.3], [0.46, 0.3])]).lines);
   const crossing = nearestSpot(beside, { x: 0.06, y: 0 }).to;
   assert.ok(Math.hypot(beside.xs[crossing] - 0.06, beside.ys[crossing]) < 1e-9);
   assert.equal(beside.ways[crossing].length, 4);
 });
 
+/**
+ * How many of some interchanges are within a twentieth of a mile of a place.
+ * @param {{ x: number, y: number }[]} interchanges
+ * @param {number} x
+ * @param {number} y
+ */
+const interchangesAt = (interchanges, x, y) => interchanges.filter((at) => Math.hypot(at.x - x, at.y - y) < 0.05).length;
+
+test('every place the car can get on or off a freeway is listed once', () => {
+  // Main Street, the other interstate, End Road and the spur.
+  for (const [x, y] of [[0, 0], [0, -3], [0, 4], [0, -1]]) assert.equal(interchangesAt(driving.interchanges, x, y), 1, `at ${x}, ${y}`);
+  assert.equal(driving.interchanges.length, 4);
+});
+
+test('each interchange is at a junction on the freeway', () => {
+  for (const at of driving.interchanges) {
+    const point = nearestSpot(network, at).to;
+    assert.ok(Math.hypot(network.xs[point] - at.x, network.ys[point] - at.y) < 1e-9);
+    assert.ok(network.ways[point].length >= 3);
+  }
+});
+
+test('a bridge with no ramps is not an interchange', () => {
+  assert.equal(interchangesAt(driving.interchanges, 0, 2), 0);
+});
+
+test('a cross road stored as two lines makes one interchange, not two', () => {
+  const { interchanges } = drivingLines([
+    road('motorway', [0.01, -2], [0.01, -0.3], [0.01, 2]),
+    road('motorway', [-0.01, 2], [-0.01, -2]),
+    road('secondary', [-3, 0], [0.1, 0], [3, 0]),
+    road('secondary', [3, 0.03], [0.1, 0.03], [-3, 0.03]),
+    road('tertiary', [0.1, 0], [0.1, 0.03]),
+    road('motorway_link', [0.01, -0.3], [0.1, 0]),
+  ]);
+  assert.equal(interchanges.length, 1);
+  assert.equal(interchangesAt(interchanges, 0, 0), 1);
+});
+
 test('a map with no freeways is left as it is', () => {
   const plain = [road('secondary', [0, 0], [1, 0]), road('tertiary', [1, 0], [1, 1])];
-  assert.deepEqual(drivingLines(plain), plain.map(({ points }) => points));
+  assert.deepEqual(drivingLines(plain), { lines: plain.map(({ points }) => points), interchanges: [] });
 });
