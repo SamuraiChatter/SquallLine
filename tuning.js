@@ -24,6 +24,11 @@ export const tuning = {
   // How many miles of map fit across the screen. Smaller zooms in.
   viewMiles: 15,
 
+  // How wide the minimap is, in pixels of the game screen, which is 1920
+  // across. The minimap sits in the top right corner while driving and shows
+  // the whole territory.
+  minimapPixels: 300,
+
   // How many miles the territory is from west to east, and from south to
   // north. The car cannot drive past its edge. These match the real map in
   // data/map.json, so they only change when the map is baked again.

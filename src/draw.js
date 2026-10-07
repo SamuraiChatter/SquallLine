@@ -80,31 +80,75 @@ export function draw(ctx, state, wholeTerritory, map, day) {
   ctx.fillStyle = '#ffd24a';
   ctx.fill();
 
-  // Back to pixels for the arrow that points at a storm out of view.
+  // Back to pixels for the minimap. It stands in for the whole-territory
+  // view, so it is only there while the view follows the car on a chase.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  const stormX = width / 2 + (storm.x - middle.x) * pixelsPerMile;
-  const stormY = height / 2 - (storm.y - middle.y) * pixelsPerMile;
-  // The storm is lopsided: its rain reaches about 9 miles north and east of
-  // its middle, and about 5 miles south and west with the hook. It is out of
-  // view only when that whole box is off the screen.
-  const far = 9 * pixelsPerMile;
-  const near = 5 * pixelsPerMile;
-  if (stormX + far < 0 || stormX - near > width || stormY + near < 0 || stormY - far > height) {
-    const margin = 60;
-    ctx.translate(
-      Math.max(margin, Math.min(width - margin, stormX)),
-      Math.max(margin, Math.min(height - margin, stormY)),
-    );
-    ctx.rotate(Math.atan2(stormY - height / 2, stormX - width / 2));
-    ctx.beginPath();
-    ctx.moveTo(40, 0);
-    ctx.lineTo(-25, -28);
-    ctx.lineTo(-25, 28);
-    ctx.closePath();
-    ctx.fillStyle = '#ff4d4d';
-    ctx.fill();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (!wholeTerritory && !state.dayOver) drawMinimap(ctx, state, map, day, pixelsPerMile);
+}
+
+// The minimap's map: the county lines and main roads of the whole territory.
+// It is painted once, at twice the size so its lines stay sharp, and reused
+// every frame.
+/** @type {HTMLCanvasElement | undefined} */
+let minimapMap;
+
+/**
+ * Paints the minimap in the top right corner: the whole territory, with the
+ * storm, the car and a box round what the main view shows.
+ * @param {CanvasRenderingContext2D} ctx Set up to draw in pixels.
+ * @param {import('./rules.js').GameState} state
+ * @param {import('./map.js').GameMap} map
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
+ * @param {number} viewPixelsPerMile How many pixels a mile takes up in the
+ *   main view.
+ */
+function drawMinimap(ctx, state, map, day, viewPixelsPerMile) {
+  const { width, height } = ctx.canvas;
+  const { car } = state;
+  const wide = tuning.minimapPixels;
+  const tall = Math.round((wide * tuning.territoryMilesTall) / tuning.territoryMilesWide);
+  const left = width - wide - 30;
+  const top = 30;
+  const pixelsPerMile = wide / tuning.territoryMilesWide;
+
+  if (!minimapMap) {
+    minimapMap = document.createElement('canvas');
+    minimapMap.width = wide * 2;
+    minimapMap.height = tall * 2;
+    const to = /** @type {CanvasRenderingContext2D} */ (minimapMap.getContext('2d'));
+    to.fillStyle = '#0b1118';
+    to.fillRect(0, 0, minimapMap.width, minimapMap.height);
+    to.translate(wide, tall);
+    to.scale(pixelsPerMile * 2, -pixelsPerMile * 2);
+    // No town names: they would not fit.
+    drawMap(to, { ...map, places: [] }, true, { x: 0, y: 0 }, pixelsPerMile * 2);
   }
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, wide, tall);
+  ctx.clip();
+  ctx.drawImage(minimapMap, left, top, wide, tall);
+
+  // Draw in miles with north at the top, as the map does.
+  ctx.translate(left + wide / 2, top + tall / 2);
+  ctx.scale(pixelsPerMile, -pixelsPerMile);
+  drawStorm(ctx, state.storm, day);
+  // What the main view shows, and the car in the middle of it.
+  const viewWide = width / viewPixelsPerMile;
+  const viewTall = height / viewPixelsPerMile;
+  ctx.lineWidth = 2 / pixelsPerMile;
+  ctx.strokeStyle = '#dce6ee';
+  ctx.strokeRect(car.x - viewWide / 2, car.y - viewTall / 2, viewWide, viewTall);
+  ctx.beginPath();
+  ctx.arc(car.x, car.y, 5 / pixelsPerMile, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffd24a';
+  ctx.fill();
+  ctx.restore();
+
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#39424c';
+  ctx.strokeRect(left, top, wide, tall);
 }
 
 /**
