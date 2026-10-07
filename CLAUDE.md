@@ -37,6 +37,9 @@ GitHub Pages publishes `main` at https://samuraichatter.github.io/SquallLine/.
   the wind is blowing at any spot near a storm, and the colours a radar gives
   them. It never touches the canvas
   or the page either, and has its own tests.
+- `src/scene.js` holds the sums behind the filming view's scenery: how dark
+  the sky is in each direction and how the trees move in the wind. It never
+  touches the canvas or the page either, and has its own tests.
 - `src/draw.js` paints the map view, `src/windshield.js` the filming view, and
   `src/hud.js` the money, damage meter, pause screen and day summary over
   both, and the title screen, briefing and final score around them.
