@@ -14,7 +14,7 @@ const along = (/** @type {number} */ x, /** @type {number} */ y) => (x + y) / Ma
 const across = (/** @type {number} */ x, /** @type {number} */ y) => (y - x) / Math.SQRT2;
 
 // The lightest rain the radar shows, and how hard it rains where hail falls.
-const faintestDbz = 20;
+export const faintestDbz = 20;
 export const hailDbz = 65;
 
 // The hook winds round the middle of the storm's rotation and ends at the

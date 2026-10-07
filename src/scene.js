@@ -1,6 +1,10 @@
 // The sums behind the filming view's scenery: how dark the sky is in each
-// direction, how the trees move in the wind, and the shape of the tornado. Nothing in here touches the
-// canvas or the page, so it runs under Node for the tests.
+// direction, how the trees move in the wind, the shape of the tornado, and
+// how much rain and hail falls. Nothing in here touches the canvas or the
+// page, so it runs under Node for the tests.
+
+import { faintestDbz } from './radar.js';
+import { hailCoreOut } from './rules.js';
 
 // The sky is at its darkest toward the tornado, and no darker than anywhere
 // else this many degrees round from it.
@@ -100,4 +104,58 @@ export function funnelHalfWidth(strength, down, tornado) {
   // dying tornado thins out to a rope.
   const thin = dyingWidth + (1 - dyingWidth) * Math.min(tornado, 1);
   return (top + (foot - top) * down ** 0.6) * thin;
+}
+
+// How hard it has to rain, in dBZ, for the rain to be a blinding sheet: where
+// the radar's red sets in. The lightest rain the radar shows falls as this
+// much of that.
+const sheetDbz = 55;
+const lightestRain = 0.08;
+// How far rain slants in still air and in the wind that bends a tree right
+// over, in radians. 1 is nearly 60 degrees.
+const calmSlant = 0.1;
+const fullSlant = 1;
+// Hail starts this many times the hail core's size out from its middle, with
+// this much of a barrage falling at the core's edge. The full barrage falls
+// from this far in toward the middle.
+const hailStartsAt = 1.5;
+const hailAtEdge = 0.15;
+const barrageAt = 0.4;
+
+/**
+ * How much rain falls on the car, for rain the radar reads as so many dBZ.
+ * @param {number} dbz
+ * @returns {number} From 0, none, where the radar shows nothing, through a
+ *   few thin streaks in its lightest green, to 1, a blinding sheet, in its
+ *   red.
+ */
+export function rainAmount(dbz) {
+  if (dbz < faintestDbz) return 0;
+  return lightestRain + (1 - lightestRain) * Math.min(1, (dbz - faintestDbz) / (sheetDbz - faintestDbz));
+}
+
+/**
+ * How far the rain slants from straight down, in radians: more as the wind
+ * at the car rises.
+ * @param {number} mph The wind at the car, as the roof gauge reads it.
+ */
+export function rainSlant(mph) {
+  return calmSlant + (fullSlant - calmSlant) * Math.min(Math.max(mph, 0) / fullLeanMph, 1);
+}
+
+/**
+ * How much hail falls at a place: a few stones just outside the storm's hail
+ * core, building to a barrage inside it.
+ * @param {import('./rules.js').Point} point
+ * @param {import('./rules.js').Storm} storm
+ * @param {import('./rules.js').Tuning} day The numbers today plays by.
+ * @returns {number} From 0, none, to 1, a barrage.
+ */
+export function hailAmount(point, storm, day) {
+  // The same measure that decides where hail damages the car: 1 is the
+  // core's edge.
+  const out = hailCoreOut(point, storm, day);
+  if (out >= hailStartsAt) return 0;
+  if (out >= 1) return (hailAtEdge * (hailStartsAt - out)) / (hailStartsAt - 1);
+  return hailAtEdge + (1 - hailAtEdge) * Math.min(1, (1 - out) / (1 - barrageAt));
 }
