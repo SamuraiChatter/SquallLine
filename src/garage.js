@@ -5,7 +5,9 @@
 // the picture file that will replace it.
 
 import { tuning } from '../tuning.js';
+import { drawChoice } from './hud.js';
 import { whyNotBuy } from './rules.js';
+import { input, targets } from './taps.js';
 
 /** @param {number} amount */
 const dollars = (amount) => `$${Math.round(amount).toLocaleString('en-US')}`;
@@ -15,6 +17,9 @@ const vehicle = { left: 90, top: 330, wide: 800, tall: 420 };
 // Where the list of parts goes, and how tall each part's row is. Twelve rows
 // fit.
 const list = { left: 960, top: 140, wide: 880, rowTall: 71 };
+// Where the middle of the buy button goes, under the vehicle, and how far
+// below it the button for moving on sits.
+const buttons = { top: 830, apart: 110 };
 
 /**
  * Paints the garage.
@@ -93,14 +98,21 @@ export function drawGarage(ctx, state, run, chosen) {
     } else if (why === 'needs') {
       ctx.fillStyle = '#ff4d4d';
       ctx.fillText(`Needs ${needed?.name ?? part.needs} first`, right, top + 38, 280);
-    } else if (why === '' && i === chosen) {
-      ctx.fillStyle = '#ffd24a';
-      ctx.fillText('B: buy', right, top + 38);
     }
+    // Tapping a row picks the part out. It never buys it.
+    targets.push({ action: `part:${i}`, left: list.left, top, wide: list.wide, tall: list.rowTall });
   });
 
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#dce6ee';
-  ctx.font = '36px system-ui, sans-serif';
-  ctx.fillText(`Up and Down: choose a part     B: buy it     Enter: on to day ${state.day + 1}`, width / 2, height - 70, width * 0.9);
+  // Under the vehicle: buy the part picked out, and move on.
+  const picked = run.parts[chosen];
+  const middle = vehicle.left + vehicle.wide / 2;
+  drawChoice(ctx, { key: 'b', words: `buy ${picked.name}` }, middle, buttons.top, whyNotBuy(state, picked) === '', vehicle.wide);
+  drawChoice(ctx, { key: 'enter', words: `on to day ${state.day + 1}` }, middle, buttons.top + buttons.apart, true, vehicle.wide);
+
+  if (!input.touch) {
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#dce6ee';
+    ctx.font = '36px system-ui, sans-serif';
+    ctx.fillText('Up and Down: choose a part', width / 2, height - 70, width * 0.9);
+  }
 }

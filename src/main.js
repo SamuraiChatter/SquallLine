@@ -1,5 +1,5 @@
-// Starts the game: reads the keys, steps the rules and paints the result,
-// once per frame.
+// Starts the game: reads the keys, taps and clicks, steps the rules and
+// paints the result, once per frame.
 
 import { tuning } from '../tuning.js';
 import { draw, sweepRadar } from './draw.js';
@@ -9,6 +9,7 @@ import { drawAbout, drawBriefing, drawDamage, drawDayChoice, drawFinalScore, dra
 import { junctionAhead } from './roads.js';
 import { beginChase, buy, dayTuning, toggleAnchor, freePlay, headHome, newRun, newSave, nextDay, readSave, resume, runFinished, saveKey, saveOf, spotters, step, strongest, toggleFilming, toggleRadarView } from './rules.js';
 import { designKey, readStorm } from './storms.js';
+import { input, pictureSpot, targetAt, targets } from './taps.js';
 import { drawWindshield } from './windshield.js';
 
 const canvas = /** @type {HTMLCanvasElement} */ (document.querySelector('canvas'));
@@ -150,21 +151,23 @@ let paused = false;
 // Which part is picked out in the garage, counting from 0.
 let chosen = 0;
 
-addEventListener('keydown', (event) => {
-  // Leave browser shortcuts such as Alt+Left (go back) alone.
-  if (event.altKey || event.ctrlKey || event.metaKey) return;
-  // Space and the arrows belong to the game, on every screen: do not let them
-  // scroll the page.
-  if (event.key === ' ' || event.key.startsWith('Arrow')) event.preventDefault();
-  const key = event.key.toLowerCase();
+/**
+ * A key pressed, or a choice tapped or clicked that stands for that key.
+ * @param {string} key The key, in small letters.
+ * @param {boolean} [repeat] True when the key is being held down and this is
+ *   not its first press.
+ * @returns {boolean} True while there is a chase to drive or film, so the
+ *   arrows steer.
+ */
+function press(key, repeat = false) {
   if (trial && key === 'd') location.href = 'design.html';
   if (screen !== 'game') {
-    if (!event.repeat) menuKey(key);
-    return;
+    if (!repeat) menuKey(key);
+    return false;
   }
   // P pauses and carries on. While paused, H heads home and ends the day.
   // A key held down repeats; act only on the first press.
-  if (key === 'p' && !event.repeat && !state.briefing && !state.dayOver) paused = !paused;
+  if (key === 'p' && !repeat && !state.briefing && !state.dayOver) paused = !paused;
   if (key === 'h' && paused) {
     state = headHome(state, game);
     paused = false;
@@ -174,14 +177,14 @@ addEventListener('keydown', (event) => {
   if (state.garage) {
     if (key === 'arrowup') chosen = Math.max(0, chosen - 1);
     if (key === 'arrowdown') chosen = Math.min(run.parts.length - 1, chosen + 1);
-    if (key === 'b' && !event.repeat) {
+    if (key === 'b' && !repeat) {
       state = buy(state, run.parts[chosen].id, run);
       keep(saveOf(state, run));
     }
   }
   // Enter moves on from the briefing, the day summary and the final score.
   // In the middle of a chase it does nothing.
-  if (key === 'enter' && !event.repeat && (state.briefing || state.dayOver)) {
+  if (key === 'enter' && !repeat && (state.briefing || state.dayOver)) {
     if (state.briefing) state = beginChase(state);
     // A storm being tried out starts over, with no briefing.
     else if (trial) play(beginChase(newRun(run, map.roads)));
@@ -189,30 +192,59 @@ addEventListener('keydown', (event) => {
     else if (state.finished || state.freePlay) screen = 'title';
     else play(nextDay(state, run, map.roads));
   }
-  if (paused || state.briefing || state.dayOver) return;
+  if (paused || state.briefing || state.dayOver) return false;
 
-  if (key === 'z' && !event.repeat && !state.filming) wholeTerritory = !wholeTerritory;
+  if (key === 'z' && !repeat && !state.filming) wholeTerritory = !wholeTerritory;
   // V switches the radar between the rain and the wind, in both views.
-  if (key === 'v' && !event.repeat) state = toggleRadarView(state);
+  if (key === 'v' && !repeat) state = toggleRadarView(state);
   // A drops the skirts and spikes while parked, and A again pulls them up.
-  if (key === 'a' && !event.repeat) state = toggleAnchor(state, game);
+  if (key === 'a' && !repeat) state = toggleAnchor(state, game);
   // Space pulls over to film, and Space again drives on.
-  if (event.key === ' ') {
-    if (!event.repeat) {
-      state = toggleFilming(state);
-      // An arrow still held from driving must not swing the camera, nor one
-      // held from panning drive the car off.
-      held.clear();
-    }
-    event.preventDefault();
+  if (key === ' ' && !repeat) {
+    state = toggleFilming(state);
+    // An arrow still held from driving must not swing the camera, nor one
+    // held from panning drive the car off.
+    held.clear();
   }
-  if (!event.key.startsWith('Arrow')) return;
-  held.add(event.key);
-  event.preventDefault();
+  return true;
+}
+
+addEventListener('keydown', (event) => {
+  // Leave browser shortcuts such as Alt+Left (go back) alone.
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
+  // Space and the arrows belong to the game, on every screen: do not let them
+  // scroll the page.
+  if (event.key === ' ' || event.key.startsWith('Arrow')) event.preventDefault();
+  // A keyboard player is told the keys again.
+  input.touch = false;
+  if (press(event.key.toLowerCase(), event.repeat) && event.key.startsWith('Arrow')) held.add(event.key);
 });
 addEventListener('keyup', (event) => held.delete(event.key));
 // A key let go while another window is in front never reports back.
 addEventListener('blur', () => held.clear());
+
+/**
+ * What a tap or click at a spot on the page does: see `targetAt`.
+ * @param {MouseEvent} event
+ */
+const tapped = (event) => targetAt(targets, pictureSpot({ x: event.clientX, y: event.clientY }, canvas.getBoundingClientRect(), canvas));
+
+// A finger on the screen means there may be no keyboard: the choices stop
+// naming keys. A mouse changes nothing.
+canvas.addEventListener('pointerdown', (event) => {
+  if (event.pointerType !== 'mouse') input.touch = true;
+});
+// A tap or click on a choice does what its key does. A part in the garage is
+// picked out, never bought, by a tap on its row.
+canvas.addEventListener('click', (event) => {
+  const action = tapped(event);
+  if (action.startsWith('part:')) chosen = Number(action.slice(5));
+  else if (action) press(action);
+});
+// The mouse shows a hand over anything that can be clicked.
+canvas.addEventListener('pointermove', (event) => {
+  canvas.style.cursor = tapped(event) ? 'pointer' : '';
+});
 
 /** @param {string} key */
 const pressed = (key) => (held.has(key) ? 1 : 0);
@@ -233,6 +265,8 @@ function frame(now) {
   // `last`, so never go below zero either.
   const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
   last = now;
+  // Each frame paints its own choices.
+  targets.length = 0;
 
   const steering = {
     x: pressed('ArrowRight') - pressed('ArrowLeft'),
