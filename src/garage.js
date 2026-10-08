@@ -63,6 +63,23 @@ export function drawGarage(ctx, state, run, chosen) {
     ctx.fillText(part.picture, x, y, 228);
   }
 
+  // On a small screen the small print is painted bigger (see main.js), and a
+  // row has no room for its second line. There each row is one line, and
+  // what the part picked out does is written along the bottom instead.
+  ctx.font = '22px system-ui, sans-serif';
+  const roomy = parseFloat(ctx.font) <= 22;
+
+  /**
+   * Why a part cannot be bought, in words, or '' when it can or is owned.
+   * @param {(typeof run.parts)[number]} part
+   */
+  const whyWords = (part) => {
+    const why = whyNotBuy(state, part);
+    if (why === 'money') return 'Not enough money';
+    if (why === 'needs') return `Needs ${run.parts.find((other) => other.id === part.needs)?.name ?? part.needs} first`;
+    return '';
+  };
+
   // The list of parts. Each row has the part's name and price, what it
   // does, and whether it can be bought.
   ctx.textBaseline = 'top';
@@ -76,28 +93,31 @@ export function drawGarage(ctx, state, run, chosen) {
       ctx.lineWidth = 3;
       ctx.strokeRect(list.left, top, list.wide, list.rowTall - 8);
     }
-    const why = whyNotBuy(state, part);
-    const needed = run.parts.find((other) => other.id === part.needs);
+    const owned = whyNotBuy(state, part) === 'owned';
+    const why = whyWords(part);
+    // With one line to a row, it sits in the middle of the row.
+    const line = roomy ? top + 4 : top + 14;
 
     ctx.textAlign = 'left';
-    ctx.fillStyle = why === 'owned' ? '#9be28c' : '#dce6ee';
+    ctx.fillStyle = owned ? '#9be28c' : '#dce6ee';
     ctx.font = 'bold 32px system-ui, sans-serif';
-    ctx.fillText(part.name, list.left + 16, top + 4, 560);
-    ctx.fillStyle = '#a9b8c4';
-    ctx.font = '22px system-ui, sans-serif';
-    ctx.fillText(part.does, list.left + 16, top + 38, 560);
+    ctx.fillText(part.name, list.left + 16, line, 560);
+    if (roomy) {
+      ctx.fillStyle = '#a9b8c4';
+      ctx.font = '22px system-ui, sans-serif';
+      ctx.fillText(part.does, list.left + 16, top + 38, 560);
+    }
 
     ctx.textAlign = 'right';
-    ctx.fillStyle = why === 'owned' ? '#9be28c' : '#dce6ee';
+    // With no room to say why not, the price of a part that cannot be bought
+    // is red.
+    ctx.fillStyle = owned ? '#9be28c' : why && !roomy ? '#ff4d4d' : '#dce6ee';
     ctx.font = 'bold 32px system-ui, sans-serif';
-    ctx.fillText(why === 'owned' ? 'OWNED' : dollars(part.price), right, top + 4);
-    ctx.font = '22px system-ui, sans-serif';
-    if (why === 'money') {
+    ctx.fillText(owned ? 'OWNED' : dollars(part.price), right, line);
+    if (roomy && why) {
+      ctx.font = '22px system-ui, sans-serif';
       ctx.fillStyle = '#ff4d4d';
-      ctx.fillText('Not enough money', right, top + 38);
-    } else if (why === 'needs') {
-      ctx.fillStyle = '#ff4d4d';
-      ctx.fillText(`Needs ${needed?.name ?? part.needs} first`, right, top + 38, 280);
+      ctx.fillText(why, right, top + 38, 280);
     }
     // Tapping a row picks the part out. It never buys it.
     targets.push({ action: `part:${i}`, left: list.left, top, wide: list.wide, tall: list.rowTall });
@@ -109,10 +129,17 @@ export function drawGarage(ctx, state, run, chosen) {
   drawChoice(ctx, { key: 'b', words: `buy ${picked.name}` }, middle, buttons.top, whyNotBuy(state, picked) === '', vehicle.wide);
   drawChoice(ctx, { key: 'enter', words: `on to day ${state.day + 1}` }, middle, buttons.top + buttons.apart, true, vehicle.wide);
 
-  if (!input.touch) {
-    ctx.textBaseline = 'top';
+  // Along the bottom: how to choose a part with the keys. On a small screen,
+  // what the part picked out does, and why it cannot be bought if it cannot.
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = '36px system-ui, sans-serif';
+  if (!roomy) {
+    const why = whyWords(picked);
+    ctx.fillStyle = why ? '#ff4d4d' : '#dce6ee';
+    ctx.fillText(`${why ? `${why}. ` : ''}${picked.does}`, width / 2, height - 70, width * 0.9);
+  } else if (!input.touch) {
     ctx.fillStyle = '#dce6ee';
-    ctx.font = '36px system-ui, sans-serif';
     ctx.fillText('Up and Down: choose a part', width / 2, height - 70, width * 0.9);
   }
 }

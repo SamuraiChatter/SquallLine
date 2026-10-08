@@ -10,13 +10,34 @@ import { onButton, restStick, showControls, stickNow } from './controls.js';
 import { junctionAhead } from './roads.js';
 import { beginChase, buy, canAnchor, dayTuning, toggleAnchor, freePlay, headHome, newRun, newSave, nextDay, readSave, resume, runFinished, saveKey, saveOf, spotters, step, strongest, toggleFilming, toggleRadarView } from './rules.js';
 import { designKey, readStorm } from './storms.js';
-import { chaseButtons, input, pictureSpot, targetAt, targets } from './taps.js';
+import { chaseButtons, fontAtLeast, input, mustTurn, pictureSpot, smallestWords, targetAt, targets } from './taps.js';
 import { drawWindshield } from './windshield.js';
 
 const canvas = /** @type {HTMLCanvasElement} */ (document.querySelector('canvas'));
 const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
 
 document.title = tuning.title;
+
+// On a small screen the picture is shrunk to fit, and its small print with
+// it. Every font the painting code asks for goes through here, and one that
+// would come out too small to read is raised: see `smallestTextPixels` in
+// tuning.js. On a computer or an iPad nothing is small enough to change.
+const fontOf = /** @type {PropertyDescriptor} */ (Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'font'));
+let smallest = 0;
+Object.defineProperty(ctx, 'font', {
+  get: () => fontOf.get?.call(ctx),
+  set: (font) => fontOf.set?.call(ctx, fontAtLeast(font, smallest)),
+});
+/** Works out the smallest words for the window as it is now. */
+function fit() {
+  smallest = smallestWords(tuning.smallestTextPixels, { width: canvas.clientWidth, height: canvas.clientHeight }, canvas);
+}
+fit();
+addEventListener('resize', fit);
+
+// Covers the game while a touch screen is held upright.
+const turn = /** @type {HTMLElement} */ (document.querySelector('.turn'));
+turn.textContent = tuning.touch.turnWords;
 
 /**
  * Says on the screen that something did not load, and why: otherwise the
@@ -291,8 +312,12 @@ function frame(now) {
   // Each frame paints its own choices.
   targets.length = 0;
 
+  // A touch screen held upright shows only the message to turn it, and the
+  // game waits behind it.
+  const turned = mustTurn(input.touch, innerWidth, innerHeight);
+  turn.hidden = !turned;
   // The touch controls are up while there is a chase to drive or film.
-  showControls(input.touch && screen === 'game' && !paused && !state.briefing && !state.dayOver, chaseButtons(state, canAnchor(state, game), run.touch.names));
+  showControls(input.touch && !turned && screen === 'game' && !paused && !state.briefing && !state.dayOver, chaseButtons(state, canAnchor(state, game), run.touch.names));
   // The joystick steers when a thumb is on it, and the arrows when not.
   const stick = stickNow();
   const steering =
@@ -302,7 +327,7 @@ function frame(now) {
           x: pressed('ArrowRight') - pressed('ArrowLeft'),
           y: pressed('ArrowUp') - pressed('ArrowDown'),
         };
-  if (!paused) state = spotters(step(state, steering, dt, game, map.roads), dt, game, map.places);
+  if (!paused && !turned) state = spotters(step(state, steering, dt, game, map.roads), dt, game, map.places);
   // Progress is saved as soon as a day is over. Trying out a storm and free
   // play never change it.
   if (state.dayOver && !trial && !state.freePlay && saved.day !== state.day + 1) keep(saveOf(state, run));

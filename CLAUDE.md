@@ -61,6 +61,12 @@ GitHub Pages publishes `main` at https://samuraichatter.github.io/SquallLine/.
   files, and has tests.
 - `storms/` holds the storm files saved from the design mode. Each day in
   `tuning.js` has a `stormFile` that names the one it uses.
+- The picture is always 1920 by 1080 and shrinks to fit the window. On a
+  phone that would make small print unreadable, so `src/main.js` raises any
+  font that would come out smaller than `smallestTextPixels` in `tuning.js`.
+  Painting code asks for the size it wants on a computer; a screen that has
+  to fit a phone checks that its layout still holds with bigger small print,
+  as the garage does.
 - Types are JSDoc comments. The editor checks them through `jsconfig.json`.
 - Paths in the page are relative, and a file's name is spelled the same way
   everywhere, capitals included. Pages serves the game from `/SquallLine/` and

@@ -12,6 +12,9 @@ const buttons = /** @type {HTMLButtonElement[]} */ ([...box.querySelectorAll('bu
 
 box.style.setProperty('--stick', `${tuning.touch.stickPixels}px`);
 box.style.setProperty('--button', `${tuning.touch.buttonPixels}px`);
+box.style.setProperty('--phone-stick', `${tuning.touch.phoneStickPixels}px`);
+box.style.setProperty('--phone-button', `${tuning.touch.phoneButtonPixels}px`);
+box.style.setProperty('--solid', String(tuning.touch.phoneSolid));
 
 // Which way the joystick is steering now, and the finger that is on it.
 let steering = { x: 0, y: 0 };

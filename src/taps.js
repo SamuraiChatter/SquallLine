@@ -107,3 +107,41 @@ export function choiceWords(choice, touch) {
   const capital = (/** @type {string} */ text) => text[0].toUpperCase() + text.slice(1);
   return touch ? capital(choice.words) : `${capital(choice.key)}: ${choice.words}`;
 }
+
+/**
+ * True when the player has to turn the device on its side before playing: a
+ * touch screen held upright leaves the picture a thin strip.
+ * @param {boolean} touch True for a player using a finger.
+ * @param {number} wide The window's width.
+ * @param {number} tall The window's height.
+ * @returns {boolean}
+ */
+export function mustTurn(touch, wide, tall) {
+  return touch && tall > wide;
+}
+
+/**
+ * The smallest that words can be painted in the game picture, in the
+ * picture's own pixels, and still come out a readable size on the screen.
+ * The picture is shrunk to fit the window, and its words shrink with it.
+ * @param {number} screenPixels The smallest the words may be on the screen.
+ * @param {{ width: number, height: number }} box The canvas's size on the
+ *   page.
+ * @param {{ width: number, height: number }} picture The picture's own size.
+ * @returns {number} 0 before the page has a size.
+ */
+export function smallestWords(screenPixels, box, picture) {
+  const scale = Math.min(box.width / picture.width, box.height / picture.height);
+  return scale > 0 ? screenPixels / scale : 0;
+}
+
+/**
+ * A canvas font with its size raised to the smallest allowed. Bigger words
+ * are left as they are.
+ * @param {string} font Such as `bold 26px system-ui, sans-serif`.
+ * @param {number} smallest In pixels of the game picture.
+ * @returns {string}
+ */
+export function fontAtLeast(font, smallest) {
+  return font.replace(/(\d+(?:\.\d+)?)px/, (whole, size) => (Number(size) < smallest ? `${Math.round(smallest * 10) / 10}px` : whole));
+}

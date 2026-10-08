@@ -116,3 +116,74 @@ body.touch canvas {
 .controls button:active {
   background: #2c4258;
 }
+
+/* A phone on its side is too short for a strip under the picture. There the
+   controls are smaller and see-through, and sit over the picture's edges:
+   Pause in the top left, the joystick in the bottom left, and the buttons
+   in a column up the right. No iPad is this short. */
+@media (max-height: 500px) {
+  /* The credit is wider than the bar beside the picture, so it stands
+     upright in the right-hand one, above the buttons. */
+  .credit {
+    right: 2px;
+    top: 6px;
+    writing-mode: vertical-rl;
+  }
+
+  .controls {
+    top: 0;
+    height: auto;
+    padding: 0;
+    display: block;
+    font-size: 16px;
+  }
+
+  .controls > * {
+    position: absolute;
+    opacity: var(--solid);
+  }
+
+  .stick {
+    left: 10px;
+    bottom: 10px;
+    width: var(--phone-stick);
+    height: var(--phone-stick);
+  }
+
+  .controls > button {
+    left: 6px;
+    top: 6px;
+  }
+
+  .buttons {
+    right: 6px;
+    bottom: 10px;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .controls button {
+    height: var(--phone-button);
+    min-width: 62px;
+    padding: 0 8px;
+  }
+}
+
+/* The message that covers the game while a touch screen is held upright. */
+.turn {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #05080c;
+  color: #dce6ee;
+  font: 600 24px system-ui, sans-serif;
+  text-align: center;
+}
+
+.turn[hidden] {
+  display: none;
+}
