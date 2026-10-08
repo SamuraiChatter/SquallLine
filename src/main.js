@@ -6,10 +6,11 @@ import { draw, sweepRadar } from './draw.js';
 import { drawGarage } from './garage.js';
 import { loadMap } from './map.js';
 import { drawAbout, drawBriefing, drawDamage, drawDayChoice, drawFinalScore, drawMoney, drawNewGameCheck, drawPause, drawReport, drawSummary, drawTitle, drawTrialNote } from './hud.js';
+import { onButton, restStick, showControls, stickNow } from './controls.js';
 import { junctionAhead } from './roads.js';
-import { beginChase, buy, dayTuning, toggleAnchor, freePlay, headHome, newRun, newSave, nextDay, readSave, resume, runFinished, saveKey, saveOf, spotters, step, strongest, toggleFilming, toggleRadarView } from './rules.js';
+import { beginChase, buy, canAnchor, dayTuning, toggleAnchor, freePlay, headHome, newRun, newSave, nextDay, readSave, resume, runFinished, saveKey, saveOf, spotters, step, strongest, toggleFilming, toggleRadarView } from './rules.js';
 import { designKey, readStorm } from './storms.js';
-import { input, pictureSpot, targetAt, targets } from './taps.js';
+import { chaseButtons, input, pictureSpot, targetAt, targets } from './taps.js';
 import { drawWindshield } from './windshield.js';
 
 const canvas = /** @type {HTMLCanvasElement} */ (document.querySelector('canvas'));
@@ -203,8 +204,9 @@ function press(key, repeat = false) {
   if (key === ' ' && !repeat) {
     state = toggleFilming(state);
     // An arrow still held from driving must not swing the camera, nor one
-    // held from panning drive the car off.
+    // held from panning drive the car off. The same goes for the joystick.
     held.clear();
+    restStick();
   }
   return true;
 }
@@ -215,8 +217,8 @@ addEventListener('keydown', (event) => {
   // Space and the arrows belong to the game, on every screen: do not let them
   // scroll the page.
   if (event.key === ' ' || event.key.startsWith('Arrow')) event.preventDefault();
-  // A keyboard player is told the keys again.
-  input.touch = false;
+  // A keyboard player is told the keys again, and loses the touch controls.
+  useTouch(false);
   if (press(event.key.toLowerCase(), event.repeat) && event.key.startsWith('Arrow')) held.add(event.key);
 });
 addEventListener('keyup', (event) => held.delete(event.key));
@@ -227,16 +229,37 @@ addEventListener('blur', () => held.clear());
  * What a tap or click at a spot on the page does: see `targetAt`.
  * @param {MouseEvent} event
  */
-const tapped = (event) => targetAt(targets, pictureSpot({ x: event.clientX, y: event.clientY }, canvas.getBoundingClientRect(), canvas));
+const tapped = (event) => targetAt(targets, pictureSpot({ x: event.clientX, y: event.clientY }, canvas.getBoundingClientRect(), canvas, input.touch));
 
+/**
+ * Says how the player is playing: with a finger, or with the keys. The page
+ * moves the picture up for a finger: see style.css.
+ * @param {boolean} touch
+ */
+function useTouch(touch) {
+  input.touch = touch;
+  document.body.classList.toggle('touch', touch);
+}
+
+// A tablet or phone starts out as touch, so nothing moves at the first tap.
+useTouch(matchMedia('(pointer: coarse)').matches);
 // A finger on the screen means there may be no keyboard: the choices stop
-// naming keys. A mouse changes nothing.
-canvas.addEventListener('pointerdown', (event) => {
-  if (event.pointerType !== 'mouse') input.touch = true;
+// naming keys, and a chase gets its touch controls. A mouse changes nothing.
+addEventListener('pointerdown', (event) => {
+  if (event.pointerType !== 'mouse') useTouch(true);
+});
+// A touch button does what its key does.
+onButton(press);
+// A long press must not bring up the browser's menu in the middle of a chase.
+addEventListener('contextmenu', (event) => {
+  if (input.touch) event.preventDefault();
 });
 // A tap or click on a choice does what its key does. A part in the garage is
-// picked out, never bought, by a tap on its row.
-canvas.addEventListener('click', (event) => {
+// picked out, never bought, by a tap on its row. It acts as the finger lands,
+// before a first touch moves the picture up from under it.
+canvas.addEventListener('pointerdown', (event) => {
+  // Only a finger or the main mouse button: a right-click chooses nothing.
+  if (event.button !== 0) return;
   const action = tapped(event);
   if (action.startsWith('part:')) chosen = Number(action.slice(5));
   else if (action) press(action);
@@ -268,10 +291,17 @@ function frame(now) {
   // Each frame paints its own choices.
   targets.length = 0;
 
-  const steering = {
-    x: pressed('ArrowRight') - pressed('ArrowLeft'),
-    y: pressed('ArrowUp') - pressed('ArrowDown'),
-  };
+  // The touch controls are up while there is a chase to drive or film.
+  showControls(input.touch && screen === 'game' && !paused && !state.briefing && !state.dayOver, chaseButtons(state, canAnchor(state, game), run.touch.names));
+  // The joystick steers when a thumb is on it, and the arrows when not.
+  const stick = stickNow();
+  const steering =
+    stick.x || stick.y
+      ? stick
+      : {
+          x: pressed('ArrowRight') - pressed('ArrowLeft'),
+          y: pressed('ArrowUp') - pressed('ArrowDown'),
+        };
   if (!paused) state = spotters(step(state, steering, dt, game, map.roads), dt, game, map.places);
   // Progress is saved as soon as a day is over. Trying out a storm and free
   // play never change it.

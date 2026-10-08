@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { choiceWords, pictureSpot, targetAt } from './taps.js';
+import { chaseButtons, choiceWords, pictureSpot, stickSteering, targetAt } from './taps.js';
 
 const picture = { width: 1920, height: 1080 };
 
@@ -54,4 +54,58 @@ test('a choice names its key for the keyboard and drops it for touch', () => {
   assert.equal(choiceWords({ key: 'n', words: 'new game' }, true), 'New game');
   assert.equal(choiceWords({ key: 'enter', words: 'start the chase' }, false), 'Enter: start the chase');
   assert.equal(choiceWords({ key: 'enter', words: 'start the chase' }, true), 'Start the chase');
+});
+
+test('a picture set against the top has no bar above it', () => {
+  const box = { left: 0, top: 0, width: 1180, height: 820 };
+  const spot = pictureSpot({ x: 590, y: 0 }, box, picture, true);
+  assert.ok(Math.abs(spot.x - 960) < 1e-9);
+  assert.equal(spot.y, 0);
+  // The strip under the picture is below its bottom edge.
+  assert.ok(pictureSpot({ x: 590, y: 700 }, box, picture, true).y > 1080);
+});
+
+test('the joystick steers the way the thumb is pushed, up the screen being north', () => {
+  assert.deepEqual(stickSteering({ x: 64, y: 0 }, 64, 0.2), { x: 1, y: 0 });
+  assert.deepEqual(stickSteering({ x: 0, y: -64 }, 64, 0.2), { x: 0, y: 1 });
+  assert.deepEqual(stickSteering({ x: -64, y: 0 }, 64, 0.2), { x: -1, y: 0 });
+  assert.deepEqual(stickSteering({ x: 0, y: 64 }, 64, 0.2), { x: 0, y: -1 });
+});
+
+test('the joystick steers at any angle, not just eight', () => {
+  // Thirty degrees north of east.
+  const angle = Math.PI / 6;
+  const steering = stickSteering({ x: 50 * Math.cos(angle), y: -50 * Math.sin(angle) }, 64, 0.2);
+  assert.ok(Math.abs(Math.atan2(steering.y, steering.x) - angle) < 1e-9);
+});
+
+test('a thumb resting near the middle of the joystick steers nowhere', () => {
+  assert.deepEqual(stickSteering({ x: 0, y: 0 }, 64, 0.2), { x: 0, y: 0 });
+  assert.deepEqual(stickSteering({ x: 8, y: -8 }, 64, 0.2), { x: 0, y: 0 });
+  assert.notDeepEqual(stickSteering({ x: 10, y: -10 }, 64, 0.2), { x: 0, y: 0 });
+  // Even with no dead middle at all, the very middle steers nowhere.
+  assert.deepEqual(stickSteering({ x: 0, y: 0 }, 64, 0), { x: 0, y: 0 });
+});
+
+test('the joystick never steers harder than a key, however far the thumb slides', () => {
+  const steering = stickSteering({ x: 300, y: -400 }, 64, 0.2);
+  assert.ok(Math.abs(Math.hypot(steering.x, steering.y) - 1) < 1e-9);
+  // Half way out pans the camera at half speed.
+  assert.ok(Math.abs(stickSteering({ x: 32, y: 0 }, 64, 0.2).x - 0.5) < 1e-9);
+});
+
+const names = { film: 'Film', driveOn: 'Drive on', anchor: 'Anchor', pullUp: 'Pull up', radar: 'Radar', map: 'Map', pause: 'Pause' };
+
+test('while driving, the buttons are film, radar, map and pause', () => {
+  assert.deepEqual(chaseButtons({ filming: false, anchoring: false }, false, names), { ' ': 'Film', a: '', v: 'Radar', z: 'Map', p: 'Pause' });
+});
+
+test('while filming, film reads drive on and the map button goes', () => {
+  assert.deepEqual(chaseButtons({ filming: true, anchoring: false }, false, names), { ' ': 'Drive on', a: '', v: 'Radar', z: '', p: 'Pause' });
+});
+
+test('the anchor button shows only when the vehicle can anchor, and reads pull up once it has', () => {
+  assert.equal(chaseButtons({ filming: true, anchoring: false }, true, names).a, 'Anchor');
+  assert.equal(chaseButtons({ filming: true, anchoring: true }, true, names).a, 'Pull up');
+  assert.equal(chaseButtons({ filming: true, anchoring: false }, false, names).a, '');
 });

@@ -322,6 +322,33 @@ export const tuning = {
     dayGap: 30,
   },
 
+  // The touch controls shown during a chase to a player using a finger: a
+  // joystick on the left and buttons on the right. A keyboard player never
+  // sees them. Sizes here are in pixels of the screen, not of the game
+  // picture.
+  touch: {
+    // How wide the joystick is. On an iPad it sits in a strip under the
+    // picture that is about 150 tall, so much bigger will not fit.
+    stickPixels: 128,
+    // How far from its middle the joystick must be pushed before the car
+    // moves, as a share of the way to its edge. It stops a resting thumb
+    // from creeping the car along. 0.2 is a fifth of the way.
+    stickDeadShare: 0.2,
+    // How tall each button is.
+    buttonPixels: 60,
+    // What the buttons say. Film turns into driveOn while filming, and
+    // anchor into pullUp once the skirts are going down.
+    names: {
+      film: 'Film',
+      driveOn: 'Drive on',
+      anchor: 'Anchor',
+      pullUp: 'Pull up',
+      radar: 'Radar',
+      map: 'Map',
+      pause: 'Pause',
+    },
+  },
+
   // The chase team and its vehicle. Their names show in the garage.
   team: 'Team SquallLine',
   vehicle: 'The Chaser',

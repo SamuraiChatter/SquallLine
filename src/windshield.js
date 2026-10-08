@@ -9,6 +9,7 @@ import { drawDashRadar } from './draw.js';
 import { dbzAt } from './radar.js';
 import { anchorWait, cameraOffFunnel, inDebrisZone, insideTornado, milesToFunnel, payPerSecond, tornadoInFrame, windMph } from './rules.js';
 import { funnelHalfWidth, funnelReach, hailAmount, rainAmount, rainSlant, skyDarkness, tornadoShape, treeLean } from './scene.js';
+import { input } from './taps.js';
 
 /**
  * Writes a placeholder's file name on it.
@@ -481,8 +482,9 @@ export function drawWindshield(ctx, state, day) {
   // What the skirts and spikes are doing, for a vehicle that has them.
   if (day.anchor.ringTimes !== undefined) {
     const wait = anchorWait(state, day).toFixed(1);
-    let words = 'A: anchor';
-    if (state.anchoring) words = state.anchor < 1 ? `Anchoring… ${wait} s` : 'ANCHORED.  A: pull up';
+    // A touch player has a button to anchor and pull up, and no A key.
+    let words = input.touch ? '' : 'A: anchor';
+    if (state.anchoring) words = state.anchor < 1 ? `Anchoring… ${wait} s` : input.touch ? 'ANCHORED.' : 'ANCHORED.  A: pull up';
     else if (state.anchor > 0) words = `Pulling up… ${wait} s`;
     ctx.fillStyle = state.anchor >= 1 ? '#9be28c' : '#dce6ee';
     ctx.textBaseline = 'middle';

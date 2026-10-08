@@ -180,7 +180,8 @@ function drawScreen(ctx, lines) {
  * @param {CanvasRenderingContext2D} ctx
  */
 export function drawPause(ctx) {
-  drawScreen(ctx, ['Paused', 'P: carry on', 'H: head home and end the day']);
+  // Heading home does not ask first, so it sits well clear of carrying on.
+  drawScreen(ctx, ['Paused', { key: 'p', words: 'carry on' }, '', { key: 'h', words: 'head home and end the day' }]);
 }
 
 /**
