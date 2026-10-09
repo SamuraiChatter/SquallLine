@@ -509,6 +509,17 @@ export function toggleRadarView(state) {
 }
 
 /**
+ * True when the vehicle can anchor now: only a parked vehicle with skirts
+ * can.
+ * @param {GameState} state
+ * @param {Tuning} tuning
+ * @returns {boolean}
+ */
+export function canAnchor(state, tuning) {
+  return state.filming && !state.dayOver && tuning.anchor.ringTimes !== undefined;
+}
+
+/**
  * Starts dropping the skirts and driving in the spikes, or starts pulling
  * them up again. Only a parked vehicle with skirts can anchor.
  * @param {GameState} state
@@ -516,7 +527,7 @@ export function toggleRadarView(state) {
  * @returns {GameState}
  */
 export function toggleAnchor(state, tuning) {
-  if (!state.filming || state.dayOver || tuning.anchor.ringTimes === undefined) return state;
+  if (!canAnchor(state, tuning)) return state;
   return { ...state, anchoring: !state.anchoring };
 }
 

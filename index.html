@@ -12,6 +12,19 @@
   <body>
     <!-- The game screen. Its width and height set its shape. -->
     <canvas width="1920" height="1080"></canvas>
+    <!-- The touch controls for a chase. The game shows them after a finger
+         touches the screen, and fills in what the buttons say. Each button
+         stands for a key. -->
+    <div class="controls" hidden>
+      <div class="stick"><div class="knob"></div></div>
+      <button type="button" data-key="p"></button>
+      <div class="buttons">
+        <button type="button" data-key="z"></button>
+        <button type="button" data-key="v"></button>
+        <button type="button" data-key="a"></button>
+        <button type="button" data-key=" "></button>
+      </div>
+    </div>
     <a class="credit" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>
   </body>
 </html>

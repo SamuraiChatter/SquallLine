@@ -5,6 +5,7 @@ import { tuning } from '../tuning.js';
 import { squareMiles } from './map.js';
 import { beamPassed, bearingOf, colourOf, coverOf, dbzAt, inCouplet, rotationOf, velocityAt, velocityColourOf, windCoverOf } from './radar.js';
 import { dangerRingMiles, radarMarks } from './rules.js';
+import { input } from './taps.js';
 
 /**
  * Paints the game as it is right now.
@@ -99,7 +100,9 @@ export function draw(ctx, state, wholeTerritory, map, day, ahead) {
     ctx.font = '26px system-ui, sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
-    const words = state.velocityView ? 'Radar: velocity (V: reflectivity)' : 'Radar: reflectivity (V: velocity)';
+    // A touch player has a button for the other one, and no V key.
+    const other = state.velocityView ? ' (V: reflectivity)' : ' (V: velocity)';
+    const words = `Radar: ${state.velocityView ? 'velocity' : 'reflectivity'}${input.touch ? '' : other}`;
     const top = 30 + Math.round((tuning.minimapPixels * tuning.territoryMilesTall) / tuning.territoryMilesWide) + 14;
     // A dark edge round the letters keeps them readable over the map.
     ctx.lineWidth = 5;
