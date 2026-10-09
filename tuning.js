@@ -307,6 +307,21 @@ export const tuning = {
     upSeconds: 2,
   },
 
+  // The choices on the menus and screens, which can be tapped with a finger
+  // or clicked with a mouse. Sizes are in pixels of the game picture, which
+  // is 1920 wide and 1080 tall.
+  choices: {
+    // How tall the box round each choice is, and the narrowest it can be.
+    // On the smallest iPad 84 comes out the size of a fingertip: smaller
+    // boxes are hard to hit.
+    tall: 84,
+    narrowest: 420,
+    // On the free play screen: how big each day's tile is, and the gap
+    // between one tile and the next.
+    dayTile: 140,
+    dayGap: 30,
+  },
+
   // The chase team and its vehicle. Their names show in the garage.
   team: 'Team SquallLine',
   vehicle: 'The Chaser',

@@ -4,6 +4,7 @@
 
 import { tuning } from '../tuning.js';
 import { dangerRingMiles, inDebrisZone, inHailCore, milesToFunnel, strongest } from './rules.js';
+import { choiceWords, input, targets } from './taps.js';
 
 /** @param {number} amount */
 const dollars = (amount) => `$${Math.round(amount).toLocaleString('en-US')}`;
@@ -113,21 +114,64 @@ export function drawReport(ctx, state) {
 }
 
 /**
- * Dims the screen and writes lines of text in the middle, the first one big.
+ * Paints a choice in a box with its middle on a spot, and makes the box
+ * something to tap or click.
  * @param {CanvasRenderingContext2D} ctx
- * @param {string[]} lines
+ * @param {import('./taps.js').Choice} choice
+ * @param {number} x
+ * @param {number} y
+ * @param {boolean} [open] False for a choice that cannot be made right now:
+ *   it is painted dim, and a tap on it does nothing.
+ * @param {number} [widest] The widest the box can be. Longer words are
+ *   squeezed to fit.
+ */
+export function drawChoice(ctx, choice, x, y, open = true, widest = ctx.canvas.width * 0.9) {
+  const { tall, narrowest } = tuning.choices;
+  const words = choiceWords(choice, input.touch);
+  ctx.font = '54px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const wide = Math.max(narrowest, Math.min(ctx.measureText(words).width + 80, widest));
+  const left = x - wide / 2;
+  const top = y - tall / 2;
+  ctx.fillStyle = '#1c2a38';
+  ctx.fillRect(left, top, wide, tall);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = open ? '#dce6ee' : '#5b6875';
+  ctx.strokeRect(left, top, wide, tall);
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.fillText(words, x, y, wide - 80);
+  if (open) targets.push({ action: choice.key, left, top, wide, tall });
+}
+
+/**
+ * How far down the screen a line of a screen's text sits, counting from 0.
+ * @param {number} height The picture's height.
+ * @param {number} i
+ */
+const lineY = (height, i) => height * 0.22 + i * 110;
+
+/**
+ * Dims the screen and writes lines of text in the middle, the first one big.
+ * A line that is a choice is painted in a box that can be tapped.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {(string | import('./taps.js').Choice)[]} lines
  */
 function drawScreen(ctx, lines) {
   const { width, height } = ctx.canvas;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = 'rgba(5, 8, 12, 0.8)';
   ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = '#dce6ee';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   lines.forEach((line, i) => {
+    if (typeof line !== 'string') {
+      drawChoice(ctx, line, width / 2, lineY(height, i));
+      return;
+    }
+    ctx.fillStyle = '#dce6ee';
     ctx.font = i === 0 ? 'bold 120px system-ui, sans-serif' : '54px system-ui, sans-serif';
-    ctx.fillText(line, width / 2, height * 0.22 + i * 110, width * 0.9);
+    ctx.fillText(line, width / 2, lineY(height, i), width * 0.9);
   });
 }
 
@@ -151,10 +195,10 @@ export function drawTitle(ctx, save, days, canSave) {
   drawScreen(ctx, [
     tuning.title,
     `by ${tuning.studio}`,
-    ...(finished ? [`F: free play (final score ${dollars(save.balance)})`] : []),
-    ...(!finished && save.day > 1 ? [`C: continue (day ${save.day}, ${dollars(save.balance)})`] : []),
-    'N: new game',
-    'A: about',
+    ...(finished ? [{ key: 'f', words: `free play (final score ${dollars(save.balance)})` }] : []),
+    ...(!finished && save.day > 1 ? [{ key: 'c', words: `continue (day ${save.day}, ${dollars(save.balance)})` }] : []),
+    { key: 'n', words: 'new game' },
+    { key: 'a', words: 'about' },
     ...(save.best > 0 ? [`Best final score: ${dollars(save.best)}`] : []),
     ...(canSave ? [] : ['Progress will not be saved in this window.']),
   ]);
@@ -165,7 +209,7 @@ export function drawTitle(ctx, save, days, canSave) {
  * @param {CanvasRenderingContext2D} ctx
  */
 export function drawAbout(ctx) {
-  drawScreen(ctx, ['About', `${tuning.title} is made by ${tuning.studio}.`, 'Map data © OpenStreetMap contributors.', 'The link is in the corner of the page.', 'Enter: back']);
+  drawScreen(ctx, ['About', `${tuning.title} is made by ${tuning.studio}.`, 'Map data © OpenStreetMap contributors.', 'The link is in the corner of the page.', { key: 'enter', words: 'back' }]);
 }
 
 /**
@@ -173,16 +217,33 @@ export function drawAbout(ctx) {
  * @param {CanvasRenderingContext2D} ctx
  */
 export function drawNewGameCheck(ctx) {
-  drawScreen(ctx, ['New game?', 'This run will be wiped.', 'The best final score is kept.', 'Y: start again', 'N: go back']);
+  drawScreen(ctx, ['New game?', 'This run will be wiped.', 'The best final score is kept.', { key: 'y', words: 'start again' }, { key: 'n', words: 'go back' }]);
 }
 
 /**
- * Asks which day to replay in free play.
+ * Asks which day to replay in free play, with a numbered tile for each day.
  * @param {CanvasRenderingContext2D} ctx
  * @param {number} days How many days there are.
  */
 export function drawDayChoice(ctx, days) {
-  drawScreen(ctx, ['Free play', `Press 1 to ${days} to pick a day.`, 'Free play never changes the final score.', 'Enter: back']);
+  const { width, height } = ctx.canvas;
+  const { dayTile, dayGap } = tuning.choices;
+  // The third line is left empty for the row of tiles.
+  drawScreen(ctx, ['Free play', input.touch ? 'Pick a day.' : `Press 1 to ${days} to pick a day.`, '', 'Free play never changes the final score.', { key: 'enter', words: 'back' }]);
+  const first = (width - days * dayTile - (days - 1) * dayGap) / 2;
+  const top = lineY(height, 2) - dayTile / 2;
+  ctx.font = 'bold 72px system-ui, sans-serif';
+  ctx.lineWidth = 3;
+  for (let day = 1; day <= days; day++) {
+    const left = first + (day - 1) * (dayTile + dayGap);
+    ctx.fillStyle = '#1c2a38';
+    ctx.fillRect(left, top, dayTile, dayTile);
+    ctx.strokeStyle = '#dce6ee';
+    ctx.strokeRect(left, top, dayTile, dayTile);
+    ctx.fillStyle = '#dce6ee';
+    ctx.fillText(String(day), left + dayTile / 2, top + dayTile / 2);
+    targets.push({ action: String(day), left, top, wide: dayTile, tall: dayTile });
+  }
 }
 
 /**
@@ -198,7 +259,7 @@ export function drawBriefing(ctx, state, day, days) {
     state.freePlay ? `Free play: day ${state.day}` : `Day ${state.day} of ${days}`,
     `Forecast: tornadoes up to EF${strongest(day.storm.tornadoes)}`,
     ringMiles > 0 ? `Footage ring: ${ringMiles} ${ringMiles === 1 ? 'mile' : 'miles'}` : 'Footage ring: the tornado itself',
-    'Enter: start the chase',
+    { key: 'enter', words: 'start the chase' },
   ]);
 }
 
@@ -208,7 +269,7 @@ export function drawBriefing(ctx, state, day, days) {
  * @param {import('./rules.js').GameState} state
  */
 export function drawFinalScore(ctx, state) {
-  drawScreen(ctx, ['Final score', dollars(state.balance), `Best so far: ${dollars(state.best)}`, 'Enter: back to the title screen']);
+  drawScreen(ctx, ['Final score', dollars(state.balance), `Best so far: ${dollars(state.best)}`, { key: 'enter', words: 'back to the title screen' }]);
 }
 
 /**
@@ -228,6 +289,6 @@ export function drawSummary(ctx, state, trial) {
     ...(state.repairBill > 0 ? [`Repair bill: ${dollars(state.repairBill)}`] : []),
     // Free play leaves the balance, which is the final score, alone.
     state.freePlay ? `Free play: the final score stays ${dollars(state.balance)}` : `Balance: ${dollars(state.balance)}`,
-    trial ? 'Enter: try the storm again' : state.freePlay ? 'Enter: back to the title screen' : 'Enter: carry on',
+    { key: 'enter', words: trial ? 'try the storm again' : state.freePlay ? 'back to the title screen' : 'carry on' },
   ]);
 }

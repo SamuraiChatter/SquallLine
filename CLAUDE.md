@@ -41,6 +41,10 @@ GitHub Pages publishes `main` at https://samuraichatter.github.io/SquallLine/.
   the sky is in each direction, how the trees move in the wind, the shape
   of the tornado, and how much rain and hail falls. It never
   touches the canvas or the page either, and has its own tests.
+- `src/taps.js` holds what can be tapped or clicked: where each choice on a
+  screen sits in the game picture, and what it reads as for a keyboard or a
+  touch player. It never touches the canvas or the page either, and has its
+  own tests. A tap or click on a choice does what its key does.
 - `src/draw.js` paints the map view, `src/windshield.js` the filming view, and
   `src/hud.js` the money, damage meter, pause screen and day summary over
   both, and the title screen, briefing and final score around them.
