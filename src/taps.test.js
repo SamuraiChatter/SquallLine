@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { chaseButtons, choiceWords, pictureSpot, stickSteering, targetAt } from './taps.js';
+import { chaseButtons, choiceWords, fontAtLeast, mustTurn, pictureSpot, smallestWords, stickSteering, targetAt } from './taps.js';
 
 const picture = { width: 1920, height: 1080 };
 
@@ -92,6 +92,35 @@ test('the joystick never steers harder than a key, however far the thumb slides'
   assert.ok(Math.abs(Math.hypot(steering.x, steering.y) - 1) < 1e-9);
   // Half way out pans the camera at half speed.
   assert.ok(Math.abs(stickSteering({ x: 32, y: 0 }, 64, 0.2).x - 0.5) < 1e-9);
+});
+
+test('a touch screen held upright must be turned, and nothing else must', () => {
+  assert.equal(mustTurn(true, 390, 844), true);
+  assert.equal(mustTurn(true, 844, 390), false);
+  // A narrow window on a computer is the player's business.
+  assert.equal(mustTurn(false, 390, 844), false);
+});
+
+test('on a phone, small print is raised to a readable size', () => {
+  // A phone on its side: the picture is shrunk to 390 tall.
+  const smallest = smallestWords(12, { width: 844, height: 390 }, picture);
+  assert.ok(Math.abs(smallest - (12 * 1080) / 390) < 1e-9);
+  const font = fontAtLeast('22px system-ui, sans-serif', smallest);
+  assert.equal(font, '33.2px system-ui, sans-serif');
+  // What that comes out as on the screen.
+  assert.ok(Math.abs((33.2 * 390) / 1080 - 12) < 0.05);
+  assert.equal(fontAtLeast('bold 26px system-ui, sans-serif', smallest), 'bold 33.2px system-ui, sans-serif');
+  // Words that are big enough already are left alone.
+  assert.equal(fontAtLeast('bold 54px system-ui, sans-serif', smallest), 'bold 54px system-ui, sans-serif');
+});
+
+test('on a computer or an iPad no words change size', () => {
+  for (const box of [{ width: 1920, height: 1080 }, { width: 1366, height: 768 }, { width: 1180, height: 820 }, { width: 1080, height: 810 }]) {
+    const smallest = smallestWords(12, box, picture);
+    assert.equal(fontAtLeast('22px system-ui, sans-serif', smallest), '22px system-ui, sans-serif');
+  }
+  // Before the page has a size, nothing changes either.
+  assert.equal(fontAtLeast('22px system-ui, sans-serif', smallestWords(12, { width: 0, height: 0 }, picture)), '22px system-ui, sans-serif');
 });
 
 const names = { film: 'Film', driveOn: 'Drive on', anchor: 'Anchor', pullUp: 'Pull up', radar: 'Radar', map: 'Map', pause: 'Pause' };

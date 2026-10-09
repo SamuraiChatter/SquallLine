@@ -322,6 +322,13 @@ export const tuning = {
     dayGap: 30,
   },
 
+  // The smallest any words in the game picture may come out on the screen,
+  // in pixels of the screen. The picture shrinks to fit a small screen, and
+  // on a phone its small print would be too small to read: there, words
+  // that would come out smaller than this are painted bigger. A computer
+  // or an iPad is big enough that nothing changes.
+  smallestTextPixels: 12,
+
   // The touch controls shown during a chase to a player using a finger: a
   // joystick on the left and buttons on the right. A keyboard player never
   // sees them. Sizes here are in pixels of the screen, not of the game
@@ -336,6 +343,16 @@ export const tuning = {
     stickDeadShare: 0.2,
     // How tall each button is.
     buttonPixels: 60,
+    // On a phone, which is much shorter than an iPad, the joystick and the
+    // buttons are smaller and sit over the edges of the picture. These are
+    // their sizes there, and how solid they are: 1 hides the picture behind
+    // them, 0 makes them invisible.
+    phoneStickPixels: 108,
+    phoneButtonPixels: 44,
+    phoneSolid: 0.6,
+    // What a touch player is told while the device is held upright. The
+    // game waits until it is turned on its side.
+    turnWords: 'Turn your device on its side to play.',
     // What the buttons say. Film turns into driveOn while filming, and
     // anchor into pullUp once the skirts are going down.
     names: {
