@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { silence, soundMix } from './mix.js';
+import { musicLayers, musicMix, noMusic, silence, soundMix } from './mix.js';
 import { buildNetwork } from './roads.js';
 import { beginChase, funnelOf, hailCore, newGame } from './rules.js';
 
@@ -92,4 +92,56 @@ test('footage counts while filming with the tornado in the viewfinder', () => {
 test('there is nothing to hear during the briefing or once the day is over', () => {
   assert.equal(mixOf(chase(1, { briefing: true })), silence);
   assert.equal(mixOf(chase(1, { dayOver: true })), silence);
+});
+
+// The music starts to build 12 miles from the tornado and is at its fullest
+// 2 miles from it.
+const music = { loudness: 1, startMiles: 12, peakMiles: 2 };
+/** @param {import('./rules.js').GameState} state */
+const musicOf = (state) => musicMix(state, music);
+
+test('the music builds from the start distance to the peak distance', () => {
+  assert.equal(musicOf(chase(12)).intensity, 0);
+  assert.equal(musicOf(chase(20)).intensity, 0);
+  assert.equal(musicOf(chase(7)).intensity, 0.5);
+  assert.equal(musicOf(chase(2)).intensity, 1);
+  assert.equal(musicOf(chase(0.5)).intensity, 1);
+  // Driving away calms it by the same steps.
+  assert.ok(musicOf(chase(9)).intensity < musicOf(chase(4)).intensity);
+});
+
+test('with no tornado the music follows the hook, and builds only half way', () => {
+  /** @param {number} hook */
+  const hooked = (hook) => {
+    const state = chase(2, {}, 0);
+    return musicOf({ ...state, storm: { ...state.storm, hook } });
+  };
+  assert.equal(hooked(0).intensity, 0);
+  assert.equal(hooked(0.5).intensity, 0.25);
+  assert.equal(hooked(1).intensity, 0.5);
+  assert.equal(hooked(0).playing, true);
+});
+
+test('the music plays only while driving a chase', () => {
+  assert.equal(musicOf(chase(2)).playing, true);
+  assert.equal(musicOf(chase(2, { filming: true })), noMusic);
+  assert.equal(musicOf(chase(2, { briefing: true })), noMusic);
+  assert.equal(musicOf(chase(2, { dayOver: true })), noMusic);
+});
+
+test('the beat, the busier hats and the thump join in turn, each fading in', () => {
+  assert.deepEqual(musicLayers(0), { beat: 0, busy: 0, thump: 0 });
+  assert.deepEqual(musicLayers(1), { beat: 1, busy: 1, thump: 1 });
+  // Half way, which is as far as a hook alone takes it: the beat, and a
+  // little of the busier hats.
+  const half = musicLayers(0.5);
+  assert.equal(half.beat, 1);
+  assert.ok(half.busy > 0 && half.busy < 0.5);
+  assert.equal(half.thump, 0);
+  // No part jumps: a small step in intensity is a small step in every part.
+  for (let i = 0; i < 100; i++) {
+    const a = musicLayers(i / 100);
+    const b = musicLayers((i + 1) / 100);
+    for (const part of /** @type {const} */ (['beat', 'busy', 'thump'])) assert.ok(Math.abs(b[part] - a[part]) < 0.06);
+  }
 });
