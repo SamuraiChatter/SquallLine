@@ -582,6 +582,16 @@ export function tornadoInFrame(state, tuning) {
 }
 
 /**
+ * Whether footage is counting right now: the car is pulled over to film, and
+ * the tornado is in the viewfinder box or right on top of an anchored car.
+ * @param {GameState} state
+ * @param {Tuning} tuning
+ */
+export function footageCounting(state, tuning) {
+  return state.filming && (insideTornado(state, tuning) || tornadoInFrame(state, tuning));
+}
+
+/**
  * How far the tornado is to the right of where the camera points, in
  * degrees from -180 to 180. Less than zero means it is to the left.
  * @param {GameState} state
@@ -850,7 +860,7 @@ function driveOrFilm(state, steering, dt, tuning, roads) {
     // Inside the tornado there is nothing to aim at: the footage counts by
     // itself, at the top rate.
     const direct = insideTornado(next, tuning);
-    const filmed = direct || tornadoInFrame(next, tuning) ? dt : 0;
+    const filmed = footageCounting(next, tuning) ? dt : 0;
     const pay = direct ? tuning.footage.payAtTornado : payPerSecond(milesToFunnel(next), tuning);
     return { ...next, footage: state.footage + filmed, money: state.money + filmed * pay };
   }

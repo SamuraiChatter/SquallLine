@@ -307,6 +307,30 @@ export const tuning = {
     upSeconds: 2,
   },
 
+  // The sound: wind, hail, debris hitting the car, and the camera's beep. The
+  // game makes them all itself. M switches the sound off and on.
+  sound: {
+    // How loud the whole game is: 1 is full, 0 is silent.
+    loudness: 0.8,
+
+    // How loud the wind is with no tornado near, against 1 for the wind right
+    // at a tornado. 0 is no wind at all until a tornado is close. The wind
+    // grows from here as the car closes in, starting wind.reachMiles out.
+    breeze: 0.1,
+
+    // How much of the wind and hail gets inside the car while driving,
+    // against 1 for standing outside to film. 0.4 is less than half as loud.
+    // It is muffled as well.
+    inCarLoudness: 0.4,
+
+    // Sounds of your own, to play in place of the game's. Put the recording
+    // in the sounds folder and type its name between the quotes, such as
+    // 'wind.mp3'. Leave the quotes empty ('') to keep the game's sound. Wind
+    // and hail play round and round, so record a few seconds with no clear
+    // start or end; thud and beep play once each time.
+    files: { wind: '', hail: '', thud: '', beep: '' },
+  },
+
   // The choices on the menus and screens, which can be tapped with a finger
   // or clicked with a mouse. Sizes are in pixels of the game picture, which
   // is 1920 wide and 1080 tall.

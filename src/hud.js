@@ -178,10 +178,11 @@ function drawScreen(ctx, lines) {
 /**
  * Paints the pause screen.
  * @param {CanvasRenderingContext2D} ctx
+ * @param {boolean} muted True while the sound is switched off.
  */
-export function drawPause(ctx) {
+export function drawPause(ctx, muted) {
   // Heading home does not ask first, so it sits well clear of carrying on.
-  drawScreen(ctx, ['Paused', { key: 'p', words: 'carry on' }, '', { key: 'h', words: 'head home and end the day' }]);
+  drawScreen(ctx, ['Paused', { key: 'p', words: 'carry on' }, { key: 'm', words: muted ? 'sound on' : 'sound off' }, '', { key: 'h', words: 'head home and end the day' }]);
 }
 
 /**
