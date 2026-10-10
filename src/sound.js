@@ -59,7 +59,8 @@ function clatter(ctx) {
 function build(ctx) {
   const master = ctx.createGain();
   master.gain.value = muted ? 0 : tuning.sound.loudness;
-  master.connect(ctx.destination);
+  // The compressor keeps a pile-up of wind, hits and music from distorting.
+  master.connect(ctx.createDynamicsCompressor()).connect(ctx.destination);
 
   // The wind and hail pass through the car's shell: quiet and muffled from
   // inside it, loud and clear once the player is out filming.
@@ -269,6 +270,12 @@ export function beep(counting) {
   tone.frequency.value = counting ? 1320 : 880;
   once(tone, master, 0.12, 0.09);
 }
+
+/**
+ * Where the music plugs in, once the sound has begun: it shares the sound's
+ * clock, its loudness and its mute.
+ */
+export const soundOut = () => rig && { ctx: rig.ctx, master: rig.master, noise: rig.noise };
 
 /** True while the sound is switched off. */
 export const isMuted = () => muted;

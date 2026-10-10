@@ -49,10 +49,12 @@ creative lead.
   holds the sums behind the touch controls: which way the joystick steers,
   and which buttons a chase shows.
 - `src/mix.js` holds the sums behind the sound: how loud the wind and hail
-  are at any moment, and whether footage is counting. It never touches the
-  canvas or the page either, and has its own tests. `src/sound.js` makes the
-  sound itself, in the browser, with no sound files. A recording in `sounds/`
-  plays in place of one of the game's sounds when `tuning.js` names it.
+  are at any moment, whether footage is counting, and how far the music has
+  built. It never touches the canvas or the page either, and has its own
+  tests. `src/sound.js` makes the sound itself, in the browser, with no sound
+  files. A recording in `sounds/` plays in place of one of the game's sounds
+  when `tuning.js` names it. `src/music.js` makes the driving music the same
+  way, and plays it through the sound, so M mutes both.
 - `src/controls.js` is the touch controls themselves: the joystick and the
   buttons in `index.html`, laid over the game during a chase for a player
   using a finger. Each button does what its key does.

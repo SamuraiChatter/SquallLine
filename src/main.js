@@ -5,7 +5,8 @@ import { tuning } from '../tuning.js';
 import { draw, sweepRadar } from './draw.js';
 import { drawGarage } from './garage.js';
 import { loadMap } from './map.js';
-import { silence, soundMix } from './mix.js';
+import { musicMix, noMusic, silence, soundMix } from './mix.js';
+import { setMusic } from './music.js';
 import { drawAbout, drawBriefing, drawDamage, drawDayChoice, drawFinalScore, drawMoney, drawNewGameCheck, drawPause, drawReport, drawSummary, drawTitle, drawTrialNote } from './hud.js';
 import { onButton, restStick, showControls, stickNow } from './controls.js';
 import { junctionAhead } from './roads.js';
@@ -355,6 +356,8 @@ function frame(now) {
   // The wind and hail are heard only while the chase is moving.
   const mix = screen === 'game' && !paused && !turned ? soundMix(state, game, run.sound) : silence;
   setSound(mix);
+  // The music plays only in the car: it fades out for filming and a pause.
+  setMusic(mix === silence ? noMusic : musicMix(state, run.music));
   // The camera beeps as footage starts and stops counting. A pause, or the
   // end of the day, is not the tornado leaving the viewfinder.
   if (mix !== silence && mix.counting !== counting) {

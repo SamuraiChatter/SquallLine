@@ -1,5 +1,6 @@
 // The sums behind the sound: how loud the wind and hail are at any moment of
-// a chase, and whether the camera is counting footage. They never touch the
+// a chase, whether the camera is counting footage, and how far the music has
+// built. They never touch the
 // page or make a sound, so they run under Node, where the tests check them.
 // sound.js turns the answers into sound.
 
@@ -46,5 +47,62 @@ export function soundMix(state, tuning, sound) {
     outside: state.filming,
     loud: state.filming ? 1 : sound.inCarLoudness,
     counting: footageCounting(state, tuning),
+  };
+}
+
+/**
+ * What the music is doing at one moment.
+ * @typedef {object} Music
+ * @property {boolean} playing True while driving in a chase: the music plays
+ *   only in the car.
+ * @property {number} intensity How far the music has built: 0 is only the
+ *   drone and crackle, 1 is everything.
+ */
+
+/**
+ * No music: no chase is under way, or the player is out of the car filming.
+ * @type {Music}
+ */
+export const noMusic = { playing: false, intensity: 0 };
+
+/**
+ * What the music is doing right now. It builds as the car closes in on a
+ * tornado. With none on the ground it follows the storm's hook, and stays in
+ * its quieter half.
+ * @param {import('./rules.js').GameState} state
+ * @param {import('./rules.js').TuningFile['music']} music
+ * @returns {Music}
+ */
+export function musicMix(state, music) {
+  if (state.briefing || state.dayOver || state.filming) return noMusic;
+  const { storm } = state;
+  const { startMiles, peakMiles } = music;
+  const close = Math.max(0, Math.min(1, (startMiles - milesToFunnel(state)) / Math.max(startMiles - peakMiles, 0.001)));
+  // A full hook counts for half a tornado.
+  const danger = Math.max(Math.min(1, storm.tornado), 0.5 * Math.min(1, storm.hook));
+  return { playing: true, intensity: close * danger };
+}
+
+/**
+ * How far something has come between two marks, from 0 at or before the
+ * first to 1 at or past the second.
+ * @param {number} from
+ * @param {number} to
+ * @param {number} at
+ */
+const between = (from, to, at) => Math.max(0, Math.min(1, (at - from) / (to - from)));
+
+/**
+ * How loud each part of the music is at an intensity, each from 0 to 1. The
+ * drone and crackle always play. The beat comes in first, then gets busier,
+ * and the bass thump joins last. Each part fades in over a stretch, so
+ * nothing jumps.
+ * @param {number} intensity
+ */
+export function musicLayers(intensity) {
+  return {
+    beat: between(0.15, 0.4, intensity),
+    busy: between(0.45, 0.75, intensity),
+    thump: between(0.7, 0.9, intensity),
   };
 }

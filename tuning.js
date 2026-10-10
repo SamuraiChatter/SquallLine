@@ -331,6 +331,22 @@ export const tuning = {
     files: { wind: '', hail: '', thud: '', beep: '' },
   },
 
+  // The music, heard only while driving: a night drive in the rain. Far from
+  // the storm it is a low drone and crackle. As the car closes in a shuffling
+  // beat comes in, then gets busier and brighter, and a heartbeat thump joins
+  // close to the tornado. With no tornado on the ground it follows the
+  // storm's hook, and builds only half way.
+  music: {
+    // How loud the music is, against 1 for the wind right at a tornado. Keep
+    // it low enough to sit under the wind and hail.
+    loudness: 0.5,
+
+    // How many miles from the tornado the music starts to build, and how
+    // close the car must be for it to be at its fullest.
+    startMiles: 12,
+    peakMiles: 1.5,
+  },
+
   // The choices on the menus and screens, which can be tapped with a finger
   // or clicked with a mouse. Sizes are in pixels of the game picture, which
   // is 1920 wide and 1080 tall.
