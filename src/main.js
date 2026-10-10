@@ -5,10 +5,12 @@ import { tuning } from '../tuning.js';
 import { draw, sweepRadar } from './draw.js';
 import { drawGarage } from './garage.js';
 import { loadMap } from './map.js';
+import { silence, soundMix } from './mix.js';
 import { drawAbout, drawBriefing, drawDamage, drawDayChoice, drawFinalScore, drawMoney, drawNewGameCheck, drawPause, drawReport, drawSummary, drawTitle, drawTrialNote } from './hud.js';
 import { onButton, restStick, showControls, stickNow } from './controls.js';
 import { junctionAhead } from './roads.js';
 import { beginChase, buy, canAnchor, dayTuning, toggleAnchor, freePlay, headHome, newRun, newSave, nextDay, readSave, resume, runFinished, saveKey, saveOf, spotters, step, strongest, toggleFilming, toggleRadarView } from './rules.js';
+import { beep, beginSound, isMuted, setSound, thud, toggleMute } from './sound.js';
 import { designKey, readStorm } from './storms.js';
 import { chaseButtons, fontAtLeast, input, mustTurn, pictureSpot, smallestWords, targetAt, targets } from './taps.js';
 import { drawWindshield } from './windshield.js';
@@ -126,6 +128,7 @@ function play(day) {
   game = dayTuning(run, state.day, state.parts);
   chosen = 0;
   strikesSeen = 0;
+  counting = false;
   wholeTerritory = false;
   paused = false;
   held.clear();
@@ -183,6 +186,8 @@ let chosen = 0;
  */
 function press(key, repeat = false) {
   if (trial && key === 'd') location.href = 'design.html';
+  // M switches the sound off and on, on every screen.
+  if (key === 'm' && !repeat) toggleMute();
   if (screen !== 'game') {
     if (!repeat) menuKey(key);
     return false;
@@ -240,6 +245,8 @@ addEventListener('keydown', (event) => {
   if (event.key === ' ' || event.key.startsWith('Arrow')) event.preventDefault();
   // A keyboard player is told the keys again, and loses the touch controls.
   useTouch(false);
+  // Browsers let sound start only from a key press or a tap.
+  beginSound();
   if (press(event.key.toLowerCase(), event.repeat) && event.key.startsWith('Arrow')) held.add(event.key);
 });
 addEventListener('keyup', (event) => held.delete(event.key));
@@ -268,6 +275,11 @@ useTouch(matchMedia('(pointer: coarse)').matches);
 // naming keys, and a chase gets its touch controls. A mouse changes nothing.
 addEventListener('pointerdown', (event) => {
   if (event.pointerType !== 'mouse') useTouch(true);
+  beginSound();
+});
+// A finger counts as a tap, for starting sound, only as it lifts.
+addEventListener('pointerup', () => {
+  beginSound();
 });
 // A touch button does what its key does.
 onButton(press);
@@ -300,6 +312,9 @@ let game = dayTuning(run, state.day, state.parts);
 // How many debris strikes have been shown, and when the last one landed.
 let strikesSeen = 0;
 let struckAt = -Infinity;
+// True while footage was counting at the last frame, so the camera can beep
+// when that changes.
+let counting = false;
 let last = performance.now();
 
 /** @param {number} now */
@@ -335,6 +350,16 @@ function frame(now) {
   if (state.debrisStrikes > strikesSeen) {
     strikesSeen = state.debrisStrikes;
     struckAt = now;
+    thud();
+  }
+  // The wind and hail are heard only while the chase is moving.
+  const mix = screen === 'game' && !paused && !turned ? soundMix(state, game, run.sound) : silence;
+  setSound(mix);
+  // The camera beeps as footage starts and stops counting. A pause, or the
+  // end of the day, is not the tornado leaving the viewfinder.
+  if (mix !== silence && mix.counting !== counting) {
+    counting = mix.counting;
+    beep(counting);
   }
   sweepRadar(state, game);
   // The briefing sits over the whole territory, with the storm coming in.
@@ -357,7 +382,7 @@ function frame(now) {
   else if (state.finished) drawFinalScore(ctx, state);
   else if (state.garage) drawGarage(ctx, state, run, chosen);
   else if (state.dayOver) drawSummary(ctx, state, trial);
-  else if (paused) drawPause(ctx);
+  else if (paused) drawPause(ctx, isMuted());
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

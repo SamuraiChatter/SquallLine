@@ -14,13 +14,14 @@ GitHub Pages publishes `main` at https://samuraichatter.github.io/SquallLine/.
 
 ## The creative lead's files
 
-`tuning.js` and everything in `art/` and `storms/` belong to the creative lead.
+`tuning.js` and everything in `art/`, `sounds/` and `storms/` belong to the
+creative lead.
 
 - `tuning.js` holds the game's numbers and names. A number or name that
   changes how the game plays or reads goes there, not in the code, with a
   comment in plain language.
-- Do not change a value already in `tuning.js`, or anything in `art/` or
-  `storms/`, unless asked.
+- Do not change a value already in `tuning.js`, or anything in `art/`,
+  `sounds/` or `storms/`, unless asked.
 
 ## Code
 
@@ -47,6 +48,11 @@ GitHub Pages publishes `main` at https://samuraichatter.github.io/SquallLine/.
   own tests. A tap or click on a choice does what its key does. It also
   holds the sums behind the touch controls: which way the joystick steers,
   and which buttons a chase shows.
+- `src/mix.js` holds the sums behind the sound: how loud the wind and hail
+  are at any moment, and whether footage is counting. It never touches the
+  canvas or the page either, and has its own tests. `src/sound.js` makes the
+  sound itself, in the browser, with no sound files. A recording in `sounds/`
+  plays in place of one of the game's sounds when `tuning.js` names it.
 - `src/controls.js` is the touch controls themselves: the joystick and the
   buttons in `index.html`, laid over the game during a chase for a player
   using a finger. Each button does what its key does.
